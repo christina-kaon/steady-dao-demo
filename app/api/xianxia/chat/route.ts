@@ -780,7 +780,8 @@ export async function POST(request: Request) {
     const nextSegment = story.segments[segmentIndex + 1];
     const isLastSegmentOfChapter = !nextSegment || nextSegment.chapterId !== segment.chapterId;
     const completionRouteIsValid = storybookCandidates.length === 0 || materialCommitted;
-    const chapterCompleted = result.chapterComplete && isLastSegmentOfChapter && completionRouteIsValid;
+    const segmentCompleted = result.chapterComplete && completionRouteIsValid;
+    const chapterCompleted = segmentCompleted && isLastSegmentOfChapter;
     const chapterOutcome = chapterCompleted ? buildChapterOutcome(result.events) : undefined;
     const staticChapterComplete = chapterCompleted
       ? story.id === "steady-dao" && segment.chapterId === "ch05" && nextHud.lanAffection === 100
@@ -791,8 +792,8 @@ export async function POST(request: Request) {
       ? adaptChapterPreview(staticChapterComplete, input, result.events)
       : staticChapterComplete;
     const nextStateBase = {
-      segmentIndex: chapterCompleted && nextSegment ? segmentIndex + 1 : segmentIndex,
-      materialIndex: chapterCompleted && nextSegment ? 0 : nextMaterialIndex,
+      segmentIndex: segmentCompleted && nextSegment ? segmentIndex + 1 : segmentIndex,
+      materialIndex: segmentCompleted && nextSegment ? 0 : nextMaterialIndex,
       turnsSinceMaterial: materialCommitted ? 0 : turnsSinceMaterial + 1,
       usedMaterialIds: [...usedMaterialIds],
       hud: nextHud,
