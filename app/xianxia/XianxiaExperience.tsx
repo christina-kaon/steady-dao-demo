@@ -160,7 +160,7 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
   useEffect(() => {
     const audio = musicRef.current;
     if (!audio || !musicPlaying) return;
-    audio.volume = 0.2;
+    audio.volume = BGM_VOLUME;
     const timer = window.setTimeout(() => {
       void audio.play().catch(() => setMusicPlaying(false));
     }, 0);
@@ -180,7 +180,7 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
   async function startMusic() {
     const audio = musicRef.current;
     if (!audio || !activeMusicTrack) return;
-    audio.volume = 0.2;
+    audio.volume = BGM_VOLUME;
     try {
       await audio.play();
       setMusicPlaying(true);
