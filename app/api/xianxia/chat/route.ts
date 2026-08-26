@@ -302,7 +302,7 @@ function buildPerceptionPacket(input: string, inputKind: string, audienceIds: st
     .replace(/\s+/g, " ")
     .trim();
   const privateSignal = /(?:心想|暗想|心里|心中|默念|腹诽|回忆|想起|希望他们|不打算说|没有说出口|盘算|猜测)/;
-  const visibleAction = /(?:到达|抵达|来到|赶到|回到|返回|前往|赶往|出发|动身|下山|上山|进城|出城|登岸|穿过|翻越|登上|跳下|落地|传送|挪移|瞬移|闪现|飞遁|遁走|遁去|御剑|腾云|走|跑|飞|拿|取|拔|看|查|翻|抱|牵|吻|推|拉|布阵|放出|跟上|起身|坐下|站起|躺下|跪下|蹲下|递|交|扔|摸|杀|斩|砍|刺|击|打|制住|捆|封|救|治疗|追|躲|靠近|离开|进入|打开|关上|放下|收起|藏起|毁掉|烧掉|转身|点头|摇头|等到|过了一夜|次日|翌日|天亮|入夜|三日后|几天后)/;
+  const visibleAction = /(?:到达|抵达|来到|赶到|回到|返回|前往|赶往|出发|动身|下山|上山|进城|出城|登岸|穿过|翻越|登上|跳下|落地|到了|已经在|已在|身在|身处|传送|挪移|瞬移|闪现|飞遁|遁走|遁去|御剑|腾云|走|跑|飞|拿|取|拔|看|查|翻|抱|牵|吻|推|拉|布阵|放出|跟上|起身|坐下|站起|躺下|跪下|蹲下|递|交|扔|摸|杀|斩|砍|刺|击|打|制住|捆|封|救|治疗|追|躲|靠近|离开|进入|打开|关上|放下|收起|藏起|毁掉|烧掉|转身|点头|摇头|等到|过了一夜|次日|翌日|天亮|入夜|三日后|几天后)/;
   const speechAct = /^(?:我)?(?:对[^，,:：]{0,12})?(?:说|告诉|回答|问|喊|提醒|承认|解释)[，,:：]?\s*(.+)$/;
   const heard = quoted.map((content) => ({ content, audience_ids: audienceIds }));
   const seen: PerceptionItem[] = [];
@@ -359,8 +359,9 @@ function inferAssertedLocation(input: string, inputKind: string) {
   if (inputKind === "speech" || /[？?]/.test(input) || /(?:我说|我问|告诉|声称|假装|如果|假如)/.test(input)) return null;
   const hasCompletedMarker = /(?:已经|已|终于|到了|到达|抵达|来到|赶到|回到|返回|进入|身在|身处|现在在|此刻在)/.test(input);
   if (!hasCompletedMarker && /(?:想|打算|计划|准备|希望|要不要|能不能|不如)/.test(input)) return null;
-  const completed = input.match(/(?:已经|已|终于|如今|现在|此刻)?(?:到达|抵达|来到|赶到|回到|返回|进入|身在|身处|已在|现在在|此刻在|到了|到)(?:了)?\s*([^，。！？!?；;\s]{1,18})/u)?.[1];
-  const instantMove = input.match(/(?:瞬移|传送|挪移|闪现|飞遁|御剑|腾云)(?:到|去|至|往)(?:了)?\s*([^，。！？!?；;\s]{1,18})/u)?.[1];
+  const text = input.replace(/[（）()【】[\]]/g, " ");
+  const completed = text.match(/(?:已经|已|终于|如今|现在|此刻)?(?:到达|抵达|来到|赶到|回到|返回|进入|身在|身处|已经在|如今在|已在|现在在|此刻在|到了|到)(?:了)?\s*([^，。！？!?；;\s]{1,18})/u)?.[1];
+  const instantMove = text.match(/(?:瞬移|传送|挪移|闪现|飞遁|御剑|腾云)(?:到|去|至|往)(?:了)?\s*([^，。！？!?；;\s]{1,18})/u)?.[1];
   const actionTravel = inputKind === "action"
     ? input.match(/(?:前往|赶往|动身去|出发去)\s*([^，。！？!?；;\s]{1,18})/u)?.[1]
     : null;
