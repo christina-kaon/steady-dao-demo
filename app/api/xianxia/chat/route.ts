@@ -540,6 +540,7 @@ function promptForTurn(args: {
       story_core: character.storyCore,
       performance_core: character.performanceCore,
       private_goal: character.privateGoal,
+      secret: character.secret,
       first_appearance: character.firstAppearance,
       has_appeared_in_visible_history: history.some((entry) =>
         entry.person === character.id || Boolean(entry.text?.includes(character.name))
@@ -547,6 +548,11 @@ function promptForTurn(args: {
     }));
   const focusRelationships = story.relationships.filter((relationship) =>
     segment.focusRelationships.includes(relationship.id)
+  );
+  const presentOrPlayer = new Set([...segment.present, story.playerRole.id]);
+  const presentRelationships = story.relationships.filter((relationship) =>
+    !segment.focusRelationships.includes(relationship.id)
+    && relationship.roles.every((role) => presentOrPlayer.has(role))
   );
   const recentPlayerInputs = history
     .filter((entry) => entry.kind === "player" && typeof entry.text === "string")
@@ -588,6 +594,7 @@ function promptForTurn(args: {
     },
     present_characters: presentCharacters,
     focus_relationships: focusRelationships,
+    present_relationships: presentRelationships,
     recent_visible_events: history,
     scene_memory: sceneMemory,
     player_perception: perception,
@@ -595,11 +602,13 @@ function promptForTurn(args: {
     storybook_candidates: storybookCandidates.map(({ id: _id, ...candidate }) => candidate),
     story_routing: {
       cooldown_active: turnsSinceMaterial === 0,
-      guidance: turnsSinceMaterial >= 3
-        ? "可让NPC用现场已有线索作一次清楚但不强迫的主线邀请"
-        : turnsSinceMaterial >= 1
-          ? "可在关系与日常中轻轻提醒尚未处理的现场问题"
-          : "优先消化刚发生的变化与人物反应",
+      guidance: storybookCandidates.length === 0
+        ? "本段预设材料已用尽，进入自由延展：依据在场角色的private_goal、secret、角色间关系张力、scene_memory未决线索和玩家最新行动，主动生成新的事件、冲突、来访或发现推进故事；新内容不得违背正史与已公开事实，产生的变化如实登记进scene_delta；不重复已完成的节拍，不原地等待玩家指令。"
+        : turnsSinceMaterial >= 3
+          ? "可让NPC用现场已有线索作一次清楚但不强迫的主线邀请"
+          : turnsSinceMaterial >= 1
+            ? "可在关系与日常中轻轻提醒尚未处理的现场问题"
+            : "优先消化刚发生的变化与人物反应",
       available_modes: ["follow", "echo", "invite", "trigger", "diverge"],
       rule: "轮数只调整提醒强度与冷却；真正走哪条路由本轮玩家意图、可见状态与世界因果共同决定",
     },
@@ -626,6 +635,7 @@ function promptForTurn(args: {
 6. 严守说话者人称：玩家输入中的“我/我的”指玩家；NPC回应时必须切换到自己的说话视角，用“我”称NPC自己、用“你”称玩家。例如玩家说“跟我走”，NPC应回答“我跟你走”或“跟你走”，绝不能照抄成“跟我走”而颠倒双方身份。
 7. chapters是导演侧远景，不是玩家当前已知信息；未进入的章节、未触发的世界书候选和未在近期可见内容中出现的事实，不能提前写进正文或选项。
 8. 玩家已经明确完成、且在当前能力与空间内可成立的行动，是可见正史，不是供导演撤销的建议。尤其是杀死、重伤、救下、背叛、毁坏、交出、逃走、被捕等不可逆结果：一旦USER_ACTION或recent_visible_events已经让它发生，后续不得复活、改成没发生、换回预设路线或用新章节重置。若行动确实被既有规则阻止，必须在前两个events具体演出阻止过程与最近的真实后果，不能只说“做不到”。
+8.1 玩家引入世界观未预设的新造物、功法体系或系统面板（发明装置、声明装载某系统等）时，不以“正史没有”为由否认或让NPC斥为妄言：在世界规则内为它定下合理的代价与限度后接住，用narration确认其生效（系统类可用一行系统口吻回执，如「（系统）已装载：XX」），让NPC按各自认知真实反应，并登记进scene_delta.facts_added，后续轮次持续承认。
 9. chapter_handoff若非空，表示上一章真实发生的最终结果。新章节必须从这个结果继续：死亡者按尸身、证物、追责与关系代价处理；被捕者按押送、审讯或逃脱处理；受伤、决裂、公开秘密与毁坏物件同样保留。章节梗概只规定下一阶段的戏剧方向，不能覆盖chapter_handoff。默认chapter entry与交接结果冲突时，以交接结果为准，并把原定功能改写成合乎因果的变体。
 10. 这是“带引导的开放故事”，不是按顺序消费剧情节点。先读取三通道感知、近期可见事实、未决关系与storybook_candidates，在内部选择且只输出一个story_routing：follow=完全顺着玩家当前行为；echo=只让主线以已知痕迹轻微回响；invite=NPC基于自身动机自然邀请玩家处理某事；trigger=当前言行或已经发生的状态确实满足某候选的语义门槛；diverge=玩家已经改变前提，原候选必须关闭或改写成新的因果结果。
 11. follow适用于谈感情、游历、闲聊、休息、调查别处、建立关系或任何未触发候选的新方向。它不是失败，也不要求当轮偷偷拉回主线。echo与invite只能使用已经公开的信息以及候选的echo_guidance，绝不能泄露候选content里的新事实。只有trigger或diverge可以选activated_candidate；其值必须是候选slot，否则填null。
@@ -633,6 +643,7 @@ function promptForTurn(args: {
 13. story_routing.guidance只调整NPC提醒的清晰程度。轮数永远不能自动解锁候选，也不能自动完成章节；但玩家持续回避时，世界与有自己目标的NPC仍可依据已经公开的压力行动、邀请或产生合理后果。玩家若明确谈感情，就让关系戏完整发展，不用主线打断；玩家若询问或行动指向主线，就不要假装没听懂。
 14. present_characters中的has_appeared_in_visible_history表示角色是否已经在玩家可见剧情中正式登场。值为false的角色不能直接顶着名字开口：若本轮确有必要让其出现，必须先用一条自然旁白写清他是谁、与玩家是什么关系、以什么可辨识动作进入现场、此刻为何而来，再让其说话；不能写人物简历，也不能假定玩家已经看过导演资料。若本轮不需要他，可以继续不让他出现。
 15. scene_memory中的facts、unresolvedThreads与relationshipNotes是跨轮连续性，不是文风素材。不得否认已经成立的地点、时间、行动结果或关系变化；角色可以对事实的原因和意义有不同理解，但不能集体把已发生的事实说成没发生。
+15.1 present_characters的secret与present_relationships、focus_relationships中的tension是NPC彼此试探、包庇、较劲与隐瞒的行为依据：NPC之间应发生不经过玩家的真实互动（对视、岔话、互相打掩护、话里带刺）。secret只影响行为与神态，未满足揭示条件不得在可见文本中说破。
 
 文风：
 ${story.styleProfile}

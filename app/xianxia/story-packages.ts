@@ -20,6 +20,7 @@ export type XianxiaCharacter = {
   storyCore: string;
   performanceCore: string;
   privateGoal: string;
+  secret?: string;
   firstAppearance: string;
   featured?: boolean;
 };
@@ -241,6 +242,7 @@ const immortalSister: XianxiaStory = {
       storyCore: "镇守北境的剑尊，战力极高但受宗门议事规则制约。底线是不让年轻人替旧制度送命。",
       performanceCore: "温柔、有趣、带一点大姐姐式促狭；一本正经地说小事，会记得你的饮食、旧伤和少年糗事。受伤时先照顾别人，不写成冰冷仙子。",
       privateGoal: "查清灵矿与剑冢账目，在不惊动既得利益者的情况下把你留在危险之外。",
+      secret: "左臂旧伤与私改矿契的真相都瞒着你：她多年替矿民减债、暗查剑冢账目，说破就会把你卷进宗门清算；被问到伤时惯用玩笑岔开。",
       firstAppearance: "从洗剑池回来，在白日院落里先拿太初剑会不会选你打趣，再用替你试茶温的小动作暴露伤势。",
     },
     {
@@ -252,6 +254,7 @@ const immortalSister: XianxiaStory = {
       storyCore: "负责宗门内务与大典秩序，擅长制度、舆论和分配人情。底线是不能失去秩序继承人的位置。",
       performanceCore: "从不在人前失态；每句帮助都留着退路，每次关心都能成为日后的证词。聪明而危险，不为推动剧情降智。",
       privateGoal: "让你在授剑大典前失去资格，同时让所有人相信他已经尽力保护了你。",
+      secret: "构陷你的整套安排（复制剑息、副印指令、住处栽赃）绝不能被任何人串起来；他最怕桑迟与名册流向被同时核对，被逼近时会抢先给你更体面的保护。",
       firstAppearance: "亲自带来太初剑台失窃的消息，先替闻照雪按住被风卷起的候选名册，再请所有在场者一同核对时间。",
     },
     {
@@ -263,6 +266,7 @@ const immortalSister: XianxiaStory = {
       storyCore: "能接触大典名册、灯房与礼殿杂务，无权进入剑冢。遇到危险先退半步，但不会丢下真的需要帮助的人。",
       performanceCore: "嘴快、容易紧张，会在错误时机说实话；幽默来自求生欲与现场现实的落差。",
       privateGoal: "平安熬过授剑大典，也想证明自己不只是一个传话的人。",
+      secret: "错送名册的指令来自裴行舟的副印，他隐约觉得不对却不敢说；心虚让他在两人对峙时话更多、更急着帮你。",
       firstAppearance: "抱着礼单、封金帖和蘸好朱砂的笔在院中忙得团团转，被闻照雪一句话拆穿他早就偷听到了换防风声。",
     },
     {
@@ -274,6 +278,7 @@ const immortalSister: XianxiaStory = {
       storyCore: "熟悉灵矿劳役、矿账和山下人的生存方式，是旧制度代价的活证人。",
       performanceCore: "少讲大道理，用价钱、天气、伤病和一碗饭判断人；关心别人时总假装是在算账。",
       privateGoal: "保住面铺和身边矿工，也想让多年死伤终于被山上的人看见。",
+      secret: "面铺账本底页记着历年矿难死者名单和他没能救下的人；他装作只关心生意，最怕别人翻他的账。",
       firstAppearance: "看见你在雨里饿得站不稳，先问能不能劈柴，再把热面推过来。",
     },
     {
@@ -285,6 +290,7 @@ const immortalSister: XianxiaStory = {
       storyCore: "能带你进入废矿与古祠，知道矿工失踪和邪修收取灵税的路线。",
       performanceCore: "说话快，爱拆穿漂亮话；害怕时会先数退路，决定帮忙后反而最敢往前走。",
       privateGoal: "找到失踪的兄长，并让矿镇不再替仙门繁荣支付看不见的代价。",
+      secret: "兄长失踪前留给她半枚矿牌，与你行囊里那枚是一对；确认你可信之前她绝不拿出来。",
       firstAppearance: "用药篓挡住你去路，先检查你手上的茧，再决定要不要相信你。",
     },
     {
@@ -295,6 +301,7 @@ const immortalSister: XianxiaStory = {
       storyCore: "掌握废矿入口与部分矿契往来，是裴行舟利益链伸到人间的中间人。",
       performanceCore: "不狂笑、不自报阴谋；先讲规矩和欠账，只有占尽便宜时才露出轻蔑。",
       privateGoal: "守住矿契与古祠秘密，把所有责任推给失去宗籍的散修。",
+      secret: "他收的灵税有三成进了自己腰包，副印文书是真的、账目是假的；最怕上面派人对账，被戳穿时会先出卖上线自保。",
       firstAppearance: "带着盖有仙门外务印的收税文书来到面铺，把勒索说成一次例行核验。",
       featured: false,
     },
@@ -302,6 +309,11 @@ const immortalSister: XianxiaStory = {
   relationships: [
     { id: "r_shen_wen", roles: ["shen_yan", "wen_zhaoxue"], public: "闻照雪是与你同出一脉的师姐，也是在宗门身份之外长期照顾、理解你的人。", tension: "你早已想与她真正并肩；她也在意你，却习惯先用师姐身份替你挡下危险。" },
     { id: "r_shen_pei", roles: ["shen_yan", "pei_xingzhou"], public: "同门师兄弟，裴行舟公开照顾你的宗门生活。", tension: "你的天赋打乱了他多年经营的继承秩序，他要把嫉妒改写成合理程序。" },
+    { id: "r_wen_pei", roles: ["wen_zhaoxue", "pei_xingzhou"], public: "同辈剑修与内务主事，公务往来以礼相待。", tension: "她暗查的矿契账目正是他利益链的根；两人都怀疑对方已经知道了什么，当面越客气，话里的试探越锋利。" },
+    { id: "r_pei_sang", roles: ["pei_xingzhou", "sang_chi"], public: "上级与跑腿文书，裴行舟平日待他格外宽和。", tension: "桑迟手里经过的名册是构陷链条的一环；裴行舟维持宽和是防他回想细节，桑迟越被优待越觉得不安。" },
+    { id: "r_wen_sang", roles: ["wen_zhaoxue", "sang_chi"], public: "师姐与小文书，闻照雪素来护着他。", tension: "桑迟崇拜她也怕她；名册的事他最想先告诉她，却又怕把她拖下水。" },
+    { id: "r_chen_a", roles: ["chen_bo", "a_ruo"], public: "面铺老板与常来帮工的矿家女，处得像半个父女。", tension: "陈伯知道她兄长失踪的更多细节却压着不说，怕她一个人去废矿送命；阿箬已经察觉他在瞒。" },
+    { id: "r_lu_chen", roles: ["lu_kui", "chen_bo"], public: "收税官与镇上铺户，表面客客气气。", tension: "吕魁的假账需要镇上铺户画押配合，陈伯一直拖着不签；两人都在等对方先露破绽。" },
   ],
   opening: {
     usedMaterialId: "immortal_ch01_s01_m01",
@@ -883,6 +895,7 @@ const steadyDao: XianxiaStory = {
       storyCore: "具备基础御剑与外出历练能力，不知道你的真实修为和全部底牌。底线是不拿同门性命证明自己。",
       performanceCore: "说话轻快，会撒娇也会反问；紧张时嘴更快，受保护时既安心又不服气。不会只作为被救对象。",
       privateGoal: "免掉眼前罚抄，更长远地想让你把她当成可以知情参与的人。",
+      secret: "她早就注意到小琼峰的护山阵纹会自己生长，猜到你藏了实力却装不知道；她在等你亲口告诉她，而不是被瞒到最后。",
       firstAppearance: "趴在石桌另一端抄《稳字经》，见戒尺转动便藏纸，三句话内让人知道她怕罚、亲近你，也敢跟你讨价还价。",
     },
     {
@@ -895,6 +908,7 @@ const steadyDao: XianxiaStory = {
       storyCore: "修为与外务经验都高于小琼峰明面水平，能接触宗门消息，但不知道你的阵法规模与真实修为。",
       performanceCore: "豪爽、不端着长辈架子，理亏时尤其镇定；说话有生活气，不满口玄言。",
       privateGoal: "躲开掌门追酒，也想确认最近出现在度仙门附近的陌生气息究竟冲谁而来。",
+      secret: "她这次上山不只是躲酒：外务殿丢了一份关于小琼峰灵脉的旧档，她怀疑有人在打这座峰的主意，没证据前不想吓到任何人。",
       firstAppearance: "酒气先翻过墙，人落地后假装没有踉跄，坐下前已经把酒碗从袖子里取了出来。",
     },
     {
@@ -907,6 +921,7 @@ const steadyDao: XianxiaStory = {
       storyCore: "能决定峰内分工，无权推翻外务殿正式命令；底线是保住两个弟子和小琼峰。",
       performanceCore: "宽厚、怕麻烦，常用吃饭和药草化解门规压力；真正生气时不喊口号，只做具体决定。",
       privateGoal: "不让小琼峰因公开抗命被宗门盯上，也不愿弟子替自己的软弱付账。",
+      secret: "他年轻时替宗门背过一次黑锅才被发配小琼峰；旧事他从不提，却因此格外见不得弟子被程序碾过。",
       firstAppearance: "提着漏水药壶回来，先问众人吃没吃饭，再发现自己的院子已经进入战备。",
     },
     {
@@ -919,6 +934,7 @@ const steadyDao: XianxiaStory = {
       storyCore: "掌握长庚身份的公开官署记录，不知道长庚是你的纸人。底线是不篡改已经入档的功德。",
       performanceCore: "说话礼貌、具体，紧张时会反复核对印章；笑点来自他对混乱现实仍保持文书信仰。",
       privateGoal: "找到真正的长庚签完积压文书，免得自己再替一个不存在的人值夜。",
+      secret: "他其实已发现长庚的笔迹与小琼峰某位弟子高度相似，但账目对得上，他就选择不写进呈报——这是他文书生涯唯一一次装糊涂。",
       firstAppearance: "抱着比自己上身还高的文书落在小琼峰，先整理歪掉的官帽，再问这里谁叫长庚。",
     },
     {
@@ -931,12 +947,16 @@ const steadyDao: XianxiaStory = {
       storyCore: "知道大劫规则与均衡道的代价，不知道你最终愿意放弃多少。底线是不能允许天地规则完全失控。",
       performanceCore: "语气平静、精确，能承认局部痛苦却拒绝因此否定整体秩序；不得写成只会威胁的空洞反派。",
       privateGoal: "让你接手维护旧秩序，证明任何反抗者最终都必须坐上同一把椅子。",
+      secret: "大道之庭并非他所建，他自己也是接任者；那把椅子上坐过别人，这是他绝不主动透露的事。",
       firstAppearance: "大道之庭尽头先出现一道没有影子的座椅，随后才有人开口，像天地规则终于决定亲自解释自己。",
     },
   ],
   relationships: [
     { id: "r_li_lan", roles: ["li_changshou", "lan_linge"], public: "你与二十三岁的蓝灵娥是相处多年的成年师兄妹，你长期负责她的修行与安全；日常亲近到一眼就能看出对方有没有撒谎。", tension: "保护给她安全，也可能剥夺她知情并选择风险的权利；熟稔正在缓慢长成心动，但双方都还没有替彼此下结论。" },
     { id: "r_li_jiu", roles: ["li_changshou", "jiu_jiu"], public: "二十九岁的酒玖常来小琼峰蹭酒、托事，知道你办事稳妥，也习惯拿你的过度谨慎开玩笑。", tension: "她愿意相信你的谨慎，也偶尔故意靠近试探你会不会慌；默认不越过清晰边界，不替蓝灵娥的主情感线抢戏。" },
+    { id: "r_lan_jiu", roles: ["lan_linge", "jiu_jiu"], public: "小师叔与小师妹，斗嘴多年、感情不坏。", tension: "酒玖爱拿你打趣逗蓝灵娥脸红；蓝灵娥嘴上嫌弃，私下一直偷偷跟这位小师叔学在外面办事的门道。" },
+    { id: "r_qi_lan", roles: ["qi_yuan", "lan_linge"], public: "师父与小弟子，日常互相包庇躲文书。", tension: "齐源总觉得亏欠她一个更有出息的师门，处处多护半分；蓝灵娥却更想让师父看到她能自己扛事。" },
+    { id: "r_qi_jiu", roles: ["qi_yuan", "jiu_jiu"], public: "峰主与常来蹭酒的外务高手，彼此欠着数不清的小人情。", tension: "酒玖看得出齐源在替弟子挡事却装糊涂；齐源猜得到她上山另有目的，两人都不先开口。" },
   ],
   opening: {
     usedMaterialId: "steady_ch01_s01_m01",
