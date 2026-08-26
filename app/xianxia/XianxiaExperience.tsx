@@ -108,6 +108,7 @@ function makeInitialState(storyId: string): RuntimeState {
   };
 }
 
+const BGM_VOLUME = 0.1;
 const CHAPTER_SETTLEMENT_REVEAL_DELAY_MS = 10_000;
 
 function makeId(prefix: string) {
