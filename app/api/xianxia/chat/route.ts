@@ -360,8 +360,8 @@ function inferAssertedLocation(input: string, inputKind: string) {
   const hasCompletedMarker = /(?:已经|已|终于|到了|到达|抵达|来到|赶到|回到|返回|进入|身在|身处|现在在|此刻在)/.test(input);
   if (!hasCompletedMarker && /(?:想|打算|计划|准备|希望|要不要|能不能|不如)/.test(input)) return null;
   const text = input.replace(/[（）()【】[\]]/g, " ");
-  const completed = text.match(/(?:已经|已|终于|如今|现在|此刻)?(?:到达|抵达|来到|赶到|回到|返回|进入|身在|身处|已经在|如今在|已在|现在在|此刻在|到了|到)(?:了)?\s*([^，。！？!?；;\s]{1,18})/u)?.[1];
-  const instantMove = text.match(/(?:瞬移|传送|挪移|闪现|飞遁|御剑|腾云)(?:到|去|至|往)(?:了)?\s*([^，。！？!?；;\s]{1,18})/u)?.[1];
+  const completed = text.match(/(?:已经|已|终于|如今|现在|此刻)?(?:到达|抵达|来到|赶到|回到|返回|进入|身在|身处|已经在|如今在|已在|现在在|此刻在|到了|(?<![签迟想说提遇看听感找得没])到)(?:了)?\s*([^，。！？!?；;\s』」”"）)]{1,18})/u)?.[1];
+  const instantMove = text.match(/(?:瞬移|传送|挪移|闪现|飞遁|御剑|腾云)(?:到|去|至|往)(?:了)?\s*([^，。！？!?；;\s』」”"）)]{1,18})/u)?.[1];
   const actionTravel = inputKind === "action"
     ? input.match(/(?:前往|赶往|动身去|出发去)\s*([^，。！？!?；;\s]{1,18})/u)?.[1]
     : null;
