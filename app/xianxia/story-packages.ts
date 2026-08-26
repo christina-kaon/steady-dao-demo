@@ -106,6 +106,7 @@ export type XianxiaStory = {
   }>;
   characters: XianxiaCharacter[];
   relationships: Array<{ id: string; roles: string[]; public: string; tension: string }>;
+  worldProcesses?: Array<{ id: string; title: string; stage: string; note: string }>;
   opening: {
     events: XianxiaEvent[];
     choices: XianxiaChoice[];
@@ -314,6 +315,10 @@ const immortalSister: XianxiaStory = {
     { id: "r_wen_sang", roles: ["wen_zhaoxue", "sang_chi"], public: "师姐与小文书，闻照雪素来护着他。", tension: "桑迟崇拜她也怕她；名册的事他最想先告诉她，却又怕把她拖下水。" },
     { id: "r_chen_a", roles: ["chen_bo", "a_ruo"], public: "面铺老板与常来帮工的矿家女，处得像半个父女。", tension: "陈伯知道她兄长失踪的更多细节却压着不说，怕她一个人去废矿送命；阿箬已经察觉他在瞒。" },
     { id: "r_lu_chen", roles: ["lu_kui", "chen_bo"], public: "收税官与镇上铺户，表面客客气气。", tension: "吕魁的假账需要镇上铺户画押配合，陈伯一直拖着不签；两人都在等对方先露破绽。" },
+  ],
+  worldProcesses: [
+    { id: "proc_taichu", title: "太初剑失窃案的宗门调查", stage: "起", note: "剑冢外阵的残纹已被封存，戒律殿开始逐一排查当夜值守名册。" },
+    { id: "proc_mining", title: "北境矿契的暗流", stage: "起", note: "矿镇灵税再度加征的文书正在内务堂流转，尚未公开。" },
   ],
   opening: {
     usedMaterialId: "immortal_ch01_s01_m01",
@@ -957,6 +962,10 @@ const steadyDao: XianxiaStory = {
     { id: "r_lan_jiu", roles: ["lan_linge", "jiu_jiu"], public: "小师叔与小师妹，斗嘴多年、感情不坏。", tension: "酒玖爱拿你打趣逗蓝灵娥脸红；蓝灵娥嘴上嫌弃，私下一直偷偷跟这位小师叔学在外面办事的门道。" },
     { id: "r_qi_lan", roles: ["qi_yuan", "lan_linge"], public: "师父与小弟子，日常互相包庇躲文书。", tension: "齐源总觉得亏欠她一个更有出息的师门，处处多护半分；蓝灵娥却更想让师父看到她能自己扛事。" },
     { id: "r_qi_jiu", roles: ["qi_yuan", "jiu_jiu"], public: "峰主与常来蹭酒的外务高手，彼此欠着数不清的小人情。", tension: "酒玖看得出齐源在替弟子挡事却装糊涂；齐源猜得到她上山另有目的，两人都不先开口。" },
+  ],
+  worldProcesses: [
+    { id: "proc_stranger", title: "度仙门外的陌生气息", stage: "起", note: "后山迷阵连续两夜被轻微试探，痕迹被刻意抹去。" },
+    { id: "proc_archive", title: "外务殿灵脉旧档失窃", stage: "起", note: "关于小琼峰灵脉的旧档不见了，外务殿内部还在悄悄自查。" },
   ],
   opening: {
     usedMaterialId: "steady_ch01_s01_m01",
