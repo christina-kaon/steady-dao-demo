@@ -461,6 +461,28 @@ function adaptChapterPreview(
   };
 }
 
+const hangingTail = /(?:[^。！？!?]*(?:你|少侠|师弟|师兄)[^。！？!?]*还是[^。！？!?]*[？?]|[^。！？!?]*(?:等待|等着|静候)[^。！？!?]{0,20}(?:回答|决定|答复|示下|回应)[^。！？!?]*[。！？!?]?)\s*$/u;
+
+// 确定性剪除"A还是B问句/等待玩家回答"式悬空结尾：prompt 禁令屡被违反，改为程序义务。
+function stripHangingEnding(events: XianxiaEvent[]): XianxiaEvent[] {
+  const out = events.map((event) => ({ ...event }));
+  for (let guard = 0; guard < 3 && out.length; guard += 1) {
+    const last = out[out.length - 1];
+    const text = (last.text ?? "").trim();
+    const match = text.match(hangingTail);
+    if (!match || match.index === undefined) break;
+    const remain = text.slice(0, match.index).trim().replace(/[，、：:；;]$/u, "");
+    if ([...remain].length >= 10) {
+      last.text = /[。！？!?”」』]$/u.test(remain) ? remain : `${remain}。`;
+      break;
+    }
+    if (out.length > 5) { out.pop(); continue; }
+    if ([...remain].length >= 2) last.text = `${remain}。`;
+    break;
+  }
+  return out;
+}
+
 function normalizeTurn(value: unknown, story: XianxiaStory, present: string[]): TurnResult | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
@@ -491,7 +513,7 @@ function normalizeTurn(value: unknown, story: XianxiaStory, present: string[]): 
   }).slice(0, 2);
   if (choices.length !== 2) return null;
   return {
-    events,
+    events: stripHangingEnding(events),
     choices,
     hudDelta: normalizeHudDelta(item.hud_delta),
     storyRouting: storyRoutings.has(item.story_routing as StoryRouting)
@@ -635,7 +657,7 @@ function promptForTurn(args: {
 6. 严守说话者人称：玩家输入中的“我/我的”指玩家；NPC回应时必须切换到自己的说话视角，用“我”称NPC自己、用“你”称玩家。例如玩家说“跟我走”，NPC应回答“我跟你走”或“跟你走”，绝不能照抄成“跟我走”而颠倒双方身份。
 7. chapters是导演侧远景，不是玩家当前已知信息；未进入的章节、未触发的世界书候选和未在近期可见内容中出现的事实，不能提前写进正文或选项。
 8. 玩家已经明确完成、且在当前能力与空间内可成立的行动，是可见正史，不是供导演撤销的建议。尤其是杀死、重伤、救下、背叛、毁坏、交出、逃走、被捕等不可逆结果：一旦USER_ACTION或recent_visible_events已经让它发生，后续不得复活、改成没发生、换回预设路线或用新章节重置。若行动确实被既有规则阻止，必须在前两个events具体演出阻止过程与最近的真实后果，不能只说“做不到”。
-8.1 玩家引入世界观未预设的新造物、功法体系或系统面板（发明装置、声明装载某系统等）时，不以“正史没有”为由否认或让NPC斥为妄言：在世界规则内为它定下合理的代价与限度后接住，用narration确认其生效（系统类可用一行系统口吻回执，如「（系统）已装载：XX」），让NPC按各自认知真实反应，并登记进scene_delta.facts_added，后续轮次持续承认。
+8.1 玩家引入世界观未预设的新造物、功法体系或系统面板（发明装置、声明装载某系统等）时，不以“正史没有”为由否认或让NPC斥为妄言：在世界规则内为它定下合理的代价与限度后接住，用narration确认其生效（系统类可用一行系统口吻回执，如「（系统）已装载：XX」），让NPC按各自认知真实反应，并登记进scene_delta.facts_added，后续轮次持续承认。接住不等于口头承认后拉回主线：本轮正文必须给出该事业的真实推进（可行的第一步、所需人手物料、谁配合谁反对），NPC可按性格帮忙、讨价或泼冷水，但不得用主线事务岔开话题；两个choices中至少一个指向该事业的下一步。
 9. chapter_handoff若非空，表示上一章真实发生的最终结果。新章节必须从这个结果继续：死亡者按尸身、证物、追责与关系代价处理；被捕者按押送、审讯或逃脱处理；受伤、决裂、公开秘密与毁坏物件同样保留。章节梗概只规定下一阶段的戏剧方向，不能覆盖chapter_handoff。默认chapter entry与交接结果冲突时，以交接结果为准，并把原定功能改写成合乎因果的变体。
 10. 这是“带引导的开放故事”，不是按顺序消费剧情节点。先读取三通道感知、近期可见事实、未决关系与storybook_candidates，在内部选择且只输出一个story_routing：follow=完全顺着玩家当前行为；echo=只让主线以已知痕迹轻微回响；invite=NPC基于自身动机自然邀请玩家处理某事；trigger=当前言行或已经发生的状态确实满足某候选的语义门槛；diverge=玩家已经改变前提，原候选必须关闭或改写成新的因果结果。
 11. follow适用于谈感情、游历、闲聊、休息、调查别处、建立关系或任何未触发候选的新方向。它不是失败，也不要求当轮偷偷拉回主线。echo与invite只能使用已经公开的信息以及候选的echo_guidance，绝不能泄露候选content里的新事实。只有trigger或diverge可以选activated_candidate；其值必须是候选slot，否则填null。
