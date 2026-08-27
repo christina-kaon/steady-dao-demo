@@ -849,7 +849,7 @@ function normalizeTurn(value: unknown, story: XianxiaStory, present: string[], m
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
   if (!Array.isArray(item.events) || !Array.isArray(item.choices)) return null;
-  const events = item.events.flatMap((raw) => cleanRawEvent(raw, story)).slice(0, 10);
+  const events = item.events.flatMap((raw) => cleanRawEvent(raw, story)).slice(0, 18);
   if (events.length < 5) return null;
 
   const choices = item.choices.flatMap((raw): XianxiaChoice[] => {
@@ -883,7 +883,7 @@ function createStreamEventProcessor(story: XianxiaStory, present: string[], onEv
   // 同人台词的尾部，流式必须做同样的前瞻，否则中部就会与终版分歧。
   let pendingOs: XianxiaEvent | null = null;
   let sent = 0;
-  // 与 normalizeTurn 的 slice(0, 10) 对齐：清洗后第 11 条起终版不会保留，流式也不许下发。
+  // 与 normalizeTurn 的 slice(0, 18) 对齐：清洗后第 19 条起终版不会保留，流式也不许下发。
   let cleanedCount = 0;
   const transform = (event: XianxiaEvent): XianxiaEvent[] =>
     splitLongDialogue(promoteQuotedSpeech([event], story, present));
@@ -901,7 +901,7 @@ function createStreamEventProcessor(story: XianxiaStory, present: string[], onEv
     push(raw: unknown) {
       const cleaned: XianxiaEvent[] = [];
       for (const item of cleanRawEvent(raw, story)) {
-        if (cleanedCount >= 10) break;
+        if (cleanedCount >= 18) break;
         cleanedCount += 1;
         cleaned.push(item);
       }
@@ -1140,7 +1140,7 @@ ${JSON.stringify(runtimePacket)}
 玩家本轮明确提交：${JSON.stringify(input)}
 
 生成规则：
-- 每一轮就是一场完整的戏：beat_outline的每个节点都必须实际演出（谁做什么、出现什么），不许把任何节点一笔带过或合并跳过。全轮合计6至10个events、900至1400个中文字符。每场戏必有信息增量（新事实、新关系动向、可读的新细节，至少两样）与落幕镜头。玩家输入再短，这场戏也要四拍演完整；不用重复、排比、总结凑字。对白必须拆碎：单条dialogue以一两句话为宜（一般不超过60字），同一角色可以在一轮内多次开口、被打断、接话、补一句；严禁让任何角色一次性说一大段台词，长内容拆成多条气泡与动作narration交替。
+- 每一轮是衔接自然的连续两场戏：beat_outline的每个节点都必须实际演出（谁做什么、出现什么），不许把任何节点一笔带过或合并跳过。第一场戏完整演完后，它的钩子必须当场兑现并展开成第二场戏——第二场同样要有自己的核心变化与完整展开，不许只开个头就收。全轮合计10至18个events、1400至2200个中文字符。每场戏各有信息增量（新事实、新关系动向、可读的新细节，每场至少两样）；全轮以第二场戏的新钩子收拍。玩家输入再短，两场戏也要演完整；不用重复、排比、总结凑字。对白必须拆碎：单条dialogue以一两句话为宜（一般不超过60字），同一角色可以在一轮内多次开口、被打断、接话、补一句；严禁让任何角色一次性说一大段台词，长内容拆成多条气泡与动作narration交替。
 - 前两个events内让真正听见或看见的人具体承接玩家输入，不复述后立刻转移话题。
 - NPC回应的是玩家这一次实际说了什么、做了什么以及它造成的可见变化，不是角色模板。玩家沉默不自动等于隐瞒，含糊不自动等于装傻，拒绝不自动等于嘴硬，突然冒险也不能被改写成“仍在稳健布局”。既有声誉只能造成期待或反差，不能覆盖当下表现。
 - 玩家必须是场面的行动中心：NPC的判断、请求、试探、照顾或阻拦要落到“你现在能决定什么”。
@@ -1401,8 +1401,8 @@ async function runXianxiaTurn(body: TurnBody, onEvent?: (event: StreamedEvent) =
         npc_relations: npcRelations,
         recent_history: history.slice(-8),
       };
-      const directorSystem = `你是互动仙侠故事的隐藏导演。不写玩家可见正文，不输出思维链，只为当前一拍输出一个JSON拍板。原则：先承认玩家本轮已造成的有效变化；只选真正相关的0-3名角色上场；角色行为由其private_goal、secret与关系张力决定；玩家引入新事物时定下其来源、限度与代价；world_processes只作机会性推进；encounter_beat.must_introduce为true时必须安排一个与玩家当前活动相关的带目的进场。满足优先：玩家索取的体验（读心心声/数值/面板清单）直接给足；storybook_candidates只是隐藏参考，玩家未指向主线时不选invite、不安排主线人物打断玩家当前玩法。os_assignments给0-2名本轮有内心戏价值的角色（口嫌体正直、表里反差优先），不逢人配OS。每名上场角色的visible_behavior必须依据其persona三层（surface外壳/core_want诉求/bedrock底色）与current_state（mood/stance_to_player）生成，且不得与其recent_patterns里的模式同轴——连续两轮同一种反应即为违规，换一个反应面。npc_state_updates汇报本轮互动造成的状态变化（mood可自由写，stance_to_player只能取戒备/试探/松动/亲近/裂痕且一次至多移一档，pattern用2-6字概括该角色本轮反应模式）。beat_outline把本轮编排成4-6个节点（stage取承接/发展/转/落，发展与转可以各有多个）：本轮核心变化（信息更新/关系位移/局面改变）必须落在中部节点；每个节点的note要具体到可拍摄的事（谁做什么、出现什么），足以支撑300-400字的正文展开；节点的执行者只能是NPC、环境或世界事件，绝不把玩家的行动、反应或决定编排成节点内容——要推进就把局面推到玩家面前，等玩家自己动。engagement拍板本轮反应形状：私密对谈、一对一深交、单人求助时mode取focus并写focus_person（只有他做主要回应，其他人至多背景小动作）；宣布大事、公开冲突、多人利益同时被触及（修罗场）时mode取ensemble（被卷入者必须互相接话互相冲突，形成NPC对NPC的连锁，不许每人各自对玩家说一句）。玩家做偷窃/暗中行动等风险动作时，你按关系、情境与戏剧性裁定成、败或被抓个半截（loot_hint写结果）。npc_interaction可指定一对NPC本轮发生不经过玩家的互动及其性质（依npc_relations当前值：warmth低互相带刺、tension高正面冲突）。只输出JSON：{"beat_type":"relationship|daily|exploration|conflict|reveal|aftermath|world_event","beat_goal":"一句话","beat_outline":[{"stage":"承接|发展|转|落","note":"该节点一句话"}],"npc_state_updates":[{"id":"","mood":"","stance_to_player":"","pattern":""}],"story_routing":"follow|echo|invite|trigger|diverge","on_stage":["角色id"],"npc_motives":[{"id":"","want":"","behavior":""}],"world_change":null,"process_moves":[{"id":"","advance":false,"note":""}],"introduce_encounter":null,"closing_direction":"本轮结尾必须落在的具体钩子（新异动/未完动作/他人反应/环境变化，能自然勾出玩家下一步，不许平收）","engagement":{"mode":"focus|ensemble","focus_person":"角色id或null"},"os_assignments":[{"id":"","tone":""}],"loot_hint":null,"npc_interaction":null}`;
-      const rawBeat = await callStoryModel(directorSystem, JSON.stringify(directorPacket), 0.5, 1400);
+      const directorSystem = `你是互动仙侠故事的隐藏导演。不写玩家可见正文，不输出思维链，只为当前一拍输出一个JSON拍板。原则：先承认玩家本轮已造成的有效变化；只选真正相关的0-3名角色上场；角色行为由其private_goal、secret与关系张力决定；玩家引入新事物时定下其来源、限度与代价；world_processes只作机会性推进；encounter_beat.must_introduce为true时必须安排一个与玩家当前活动相关的带目的进场。满足优先：玩家索取的体验（读心心声/数值/面板清单）直接给足；storybook_candidates只是隐藏参考，玩家未指向主线时不选invite、不安排主线人物打断玩家当前玩法。os_assignments给0-2名本轮有内心戏价值的角色（口嫌体正直、表里反差优先），不逢人配OS。每名上场角色的visible_behavior必须依据其persona三层（surface外壳/core_want诉求/bedrock底色）与current_state（mood/stance_to_player）生成，且不得与其recent_patterns里的模式同轴——连续两轮同一种反应即为违规，换一个反应面。npc_state_updates汇报本轮互动造成的状态变化（mood可自由写，stance_to_player只能取戒备/试探/松动/亲近/裂痕且一次至多移一档，pattern用2-6字概括该角色本轮反应模式）。beat_outline把本轮编排成连续两幕共8-12个节点（stage取承接/发展/转/落，两幕各走一遍，发展与转可各有多个）：第一幕完成一个核心变化（信息更新/关系位移/局面改变）后不许收束——第一幕的"落"必须当场翻成第二幕的开门（钩子当轮兑现：异动的来源现身、门后的东西露出、真相揭开一角、新的人带着目的进场），第二幕接着实际展开并完成第二个核心变化，不许只开头；两幕的核心变化各自落在该幕中部节点；每个节点的note要具体到可拍摄的事（谁做什么、出现什么），足以支撑200-300字的正文展开；节点的执行者只能是NPC、环境或世界事件，绝不把玩家的行动、反应或决定编排成节点内容——要推进就把局面推到玩家面前，等玩家自己动。engagement拍板本轮反应形状：私密对谈、一对一深交、单人求助时mode取focus并写focus_person（只有他做主要回应，其他人至多背景小动作）；宣布大事、公开冲突、多人利益同时被触及（修罗场）时mode取ensemble（被卷入者必须互相接话互相冲突，形成NPC对NPC的连锁，不许每人各自对玩家说一句）。玩家做偷窃/暗中行动等风险动作时，你按关系、情境与戏剧性裁定成、败或被抓个半截（loot_hint写结果）。npc_interaction可指定一对NPC本轮发生不经过玩家的互动及其性质（依npc_relations当前值：warmth低互相带刺、tension高正面冲突）。只输出JSON：{"beat_type":"relationship|daily|exploration|conflict|reveal|aftermath|world_event","beat_goal":"一句话","beat_outline":[{"stage":"承接|发展|转|落","note":"该节点一句话"}],"npc_state_updates":[{"id":"","mood":"","stance_to_player":"","pattern":""}],"story_routing":"follow|echo|invite|trigger|diverge","on_stage":["角色id"],"npc_motives":[{"id":"","want":"","behavior":""}],"world_change":null,"process_moves":[{"id":"","advance":false,"note":""}],"introduce_encounter":null,"closing_direction":"本轮结尾必须落在的具体钩子（新异动/未完动作/他人反应/环境变化，能自然勾出玩家下一步，不许平收）","engagement":{"mode":"focus|ensemble","focus_person":"角色id或null"},"os_assignments":[{"id":"","tone":""}],"loot_hint":null,"npc_interaction":null}`;
+      const rawBeat = await callStoryModel(directorSystem, JSON.stringify(directorPacket), 0.5, 2200);
       const parsedBeat = typeof rawBeat === "string" ? parseModelJson(rawBeat) : rawBeat;
       if (parsedBeat && typeof parsedBeat === "object") directorBeat = parsedBeat as Record<string, unknown>;
     } catch {
@@ -1447,10 +1447,10 @@ async function runXianxiaTurn(body: TurnBody, onEvent?: (event: StreamedEvent) =
           : undefined;
         const streamedText = await callStoryModelStream(
           turnPrompt,
-          "生成本轮仙侠互动场景，只输出JSON。正文必须写满900至1400个中文字符：把beat_outline的每一个节点都完整演出来（谁做什么、出现什么、对白与反应），不许一笔带过或合并节点；不足900字即不合格。",
+          "生成本轮仙侠互动场景，只输出JSON。本轮是衔接自然的连续两场戏：把beat_outline的每一个节点都完整演出来（谁做什么、出现什么、对白与反应），第一场戏的钩子当场兑现并展开成第二场戏，两场都要完整；正文必须写满1400至2200个中文字符，第二场戏只开头不展开即不合格。",
           0.62,
-          5600,
-          { requestTimeoutMs: 60000, ...(writerModel ? { primaryModel: writerModel } : {}) },
+          9000,
+          { requestTimeoutMs: 100000, ...(writerModel ? { primaryModel: writerModel } : {}) },
           (fullText) => {
             const closed = extractClosedEvents(fullText);
             for (; emittedCount < closed.length; emittedCount += 1) streamProcessor?.push(closed[emittedCount] as XianxiaEvent);
@@ -1473,12 +1473,12 @@ async function runXianxiaTurn(body: TurnBody, onEvent?: (event: StreamedEvent) =
     if (raw === null) {
       raw = await callStoryModel(
         turnPrompt,
-        "生成本轮仙侠互动场景，只输出JSON。正文必须写满900至1400个中文字符：把beat_outline的每一个节点都完整演出来（谁做什么、出现什么、对白与反应），不许一笔带过或合并节点；不足900字即不合格。",
+        "生成本轮仙侠互动场景，只输出JSON。本轮是衔接自然的连续两场戏：把beat_outline的每一个节点都完整演出来（谁做什么、出现什么、对白与反应），第一场戏的钩子当场兑现并展开成第二场戏，两场都要完整；正文必须写满1400至2200个中文字符，第二场戏只开头不展开即不合格。",
         0.62,
-        5600,
+        9000,
         {
           stage: "prompt3",
-          requestTimeoutMs: 60000,
+          requestTimeoutMs: 100000,
           ...((body as { writerModel?: string }).writerModel ? { primaryModel: (body as { writerModel?: string }).writerModel } : {}),
           validate: (value) => {
             const turn = normalizeTurn(value, story, present);
