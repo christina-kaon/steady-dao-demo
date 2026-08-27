@@ -1,7 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { XianxiaChoice, XianxiaEvent, XianxiaMediaCue } from "./story-packages";
+
+// narration 轻量富文本：**粗体** 与 \n 分行（开场分镜的场景标题/道具强调排版用；不引入完整 markdown）。
+function renderRichText(text: string): ReactNode[] {
+  return text.split("\n").flatMap((line, lineIndex, lines) => {
+    const parts = line.split(/(\*\*[^*]+\*\*)/g).filter(Boolean).map((part, partIndex) =>
+      part.startsWith("**") && part.endsWith("**")
+        ? <strong key={`${lineIndex}-${partIndex}`}>{part.slice(2, -2)}</strong>
+        : <Fragment key={`${lineIndex}-${partIndex}`}>{part}</Fragment>
+    );
+    return lineIndex < lines.length - 1 ? [...parts, <br key={`br-${lineIndex}`} />] : parts;
+  });
+}
 
 type PublicCharacter = {
   id: string;
@@ -44,14 +56,7 @@ export type PublicXianxiaStory = {
     events: XianxiaEvent[];
     choices: XianxiaChoice[];
   };
-  initialHud?: XianxiaMediaCue;
-  chapterBackgrounds?: Record<string, {
-    video?: string;
-    image?: string;
-    poster?: string;
-    label: string;
-    tone?: { top: string; middle: string; bottom: string };
-  }>;
+  chapterBackgrounds?: Record<string, { video?: string; image?: string; poster?: string; label: string; tone?: { top: string; middle: string; bottom: string } }>;
   chapterEndPreviews?: Array<{
     chapterId: string;
     chapterNumber: number;
@@ -60,11 +65,7 @@ export type PublicXianxiaStory = {
     nextObjective?: string;
     content: XianxiaMediaCue[];
   }>;
-  backgroundMusic?: {
-    src: string;
-    title: string;
-    queue?: Array<{ src: string; title: string }>;
-  };
+  backgroundMusic?: { src: string; title: string };
 };
 
 type TranscriptItem =
@@ -76,40 +77,13 @@ type RuntimeState = {
   segmentIndex: number;
   materialIndex: number;
   turnsSinceMaterial: number;
-  usedMaterialIds?: string[];
-  hud: {
-    steadiness: number;
-    cultivation: number;
-    lanAffection: number;
-    jiujiuAffection: number;
-  };
-  chapterHandoff?: {
-    fromChapterId: string;
-    playerAction: string;
-    outcome: string;
-  };
-  sceneMemory?: {
-    time?: string;
-    location?: string;
-    facts: string[];
-    unresolvedThreads: string[];
-    relationshipNotes: string[];
-    lastClosingMode: "question" | "action" | "discovery" | "relationship" | "transition" | "other";
-  };
 };
 
-function makeInitialState(storyId: string): RuntimeState {
-  return {
-    segmentIndex: 0,
-    materialIndex: 1,
-    turnsSinceMaterial: 0,
-    usedMaterialIds: [storyId === "immortal-sister" ? "immortal_ch01_s01_m01" : "steady_ch01_s01_m01"],
-    hud: { steadiness: 12, cultivation: 8, lanAffection: 6, jiujiuAffection: 5 },
-  };
-}
-
-const BGM_VOLUME = 0.1;
-const CHAPTER_SETTLEMENT_REVEAL_DELAY_MS = 10_000;
+const initialState: RuntimeState = {
+  segmentIndex: 0,
+  materialIndex: 1,
+  turnsSinceMaterial: 0,
+};
 
 function makeId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -127,7 +101,7 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
   const [chapterArchives, setChapterArchives] = useState<Record<string, TranscriptItem[]>>({});
   const [viewingChapterId, setViewingChapterId] = useState<string | null>(null);
   const [choices, setChoices] = useState<XianxiaChoice[]>(story.opening.choices);
-  const [runtime, setRuntime] = useState<RuntimeState>(() => makeInitialState(story.id));
+  const [runtime, setRuntime] = useState<RuntimeState>(initialState);
   const [currentChapterId, setCurrentChapterId] = useState("ch01");
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
@@ -139,40 +113,26 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
   const [settlementNextChapterId, setSettlementNextChapterId] = useState<string | null>(null);
   const [settlementQueued, setSettlementQueued] = useState(false);
   const [musicPlaying, setMusicPlaying] = useState(false);
-  const [musicTrackIndex, setMusicTrackIndex] = useState(0);
   const transcriptStartRef = useRef<HTMLElement>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const musicRef = useRef<HTMLAudioElement>(null);
   const choiceWheelStartY = useRef<number | null>(null);
   const choiceWheelSelectionRef = useRef<number | null>(null);
   const chapterSettlementTimerRef = useRef<number | null>(null);
-  const musicTracks = useMemo(
-    () => story.backgroundMusic
-      ? [{ src: story.backgroundMusic.src, title: story.backgroundMusic.title }, ...(story.backgroundMusic.queue ?? [])]
-      : [],
-    [story.backgroundMusic],
-  );
-  const activeMusicTrack = musicTracks[musicTrackIndex] ?? musicTracks[0];
 
   useEffect(() => () => {
     if (chapterSettlementTimerRef.current !== null) window.clearTimeout(chapterSettlementTimerRef.current);
   }, []);
-
-  useEffect(() => {
-    const audio = musicRef.current;
-    if (!audio || !musicPlaying) return;
-    audio.volume = BGM_VOLUME;
-    const timer = window.setTimeout(() => {
-      void audio.play().catch(() => setMusicPlaying(false));
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [entered, musicPlaying, musicTrackIndex]);
 
   const characterById = useMemo(
     () => new Map(story.characters.map((character) => [character.id, character])),
     [story.characters],
   );
   const displayedMessages = viewingChapterId ? (chapterArchives[viewingChapterId] ?? []) : messages;
+  const firstPlayerIndex = displayedMessages.findIndex((item) => item.kind === "player");
+  const firstResponseEventId = firstPlayerIndex < 0
+    ? undefined
+    : displayedMessages.slice(firstPlayerIndex + 1).find((item) => item.kind === "event")?.id;
   const displayedChapterId = viewingChapterId ?? currentChapterId;
   const activeBackground = story.chapterBackgrounds?.[displayedChapterId];
   const currentChapterIndex = story.chapters.findIndex((chapter) => chapter.id === currentChapterId);
@@ -180,8 +140,8 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
 
   async function startMusic() {
     const audio = musicRef.current;
-    if (!audio || !activeMusicTrack) return;
-    audio.volume = BGM_VOLUME;
+    if (!audio || !story.backgroundMusic) return;
+    audio.volume = 0.1;
     try {
       await audio.play();
       setMusicPlaying(true);
@@ -201,20 +161,12 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
     }
   }
 
-  function advanceMusicQueue() {
-    if (musicTracks.length < 2) return;
-    setMusicTrackIndex((index) => (index + 1) % musicTracks.length);
-  }
-
   function enterStory() {
-    setMessages([
-      ...story.opening.events.map((event, index) => ({
-        ...event,
-        id: `opening-${index}`,
-        kind: "event" as const,
-      })),
-      ...(story.initialHud ? [{ id: "opening-hud", kind: "media" as const, cue: story.initialHud }] : []),
-    ]);
+    setMessages(story.opening.events.map((event, index) => ({
+      ...event,
+      id: `opening-${index}`,
+      kind: "event" as const,
+    })));
     setEntered(true);
     window.setTimeout(() => void startMusic(), 0);
     window.setTimeout(() => transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" }), 120);
@@ -245,6 +197,7 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
           input,
           inputKind,
           fromChoice,
+          stream: true,
           state: runtime,
           history: nextMessages.filter((item) => item.kind !== "media").map((item) => ({
             kind: item.kind,
@@ -253,26 +206,83 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
           })),
         }),
       });
-      const payload = await response.json() as {
+      type TurnPayload = {
         error?: string;
         events?: XianxiaEvent[];
         choices?: XianxiaChoice[];
         state?: RuntimeState;
         current?: { location?: string; chapterId?: string };
         mediaCues?: XianxiaMediaCue[];
-        turnHud?: XianxiaMediaCue;
         chapterComplete?: NonNullable<PublicXianxiaStory["chapterEndPreviews"]>[number];
         nextChapterId?: string;
       };
+      let payload: TurnPayload;
+      const streamedIds: string[] = [];
+      const streamedEvents: XianxiaEvent[] = [];
+      const contentType = response.headers.get("content-type") ?? "";
+      if (response.ok && response.body && contentType.includes("x-ndjson")) {
+        // V4.4 流式：event 帧到达即渲染，final 帧收尾对账
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let finalPayload: TurnPayload | null = null;
+        let streamError: string | null = null;
+        const handleFrame = (frame: { type?: string; event?: XianxiaEvent; payload?: TurnPayload; error?: string }) => {
+          if (frame.type === "event" && frame.event && typeof frame.event.text === "string") {
+            const id = makeId("event");
+            streamedIds.push(id);
+            streamedEvents.push(frame.event);
+            setMessages((current) => [...current, { ...frame.event!, id, kind: "event" as const }]);
+            window.setTimeout(() => transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" }), 40);
+          } else if (frame.type === "final" && frame.payload) {
+            finalPayload = frame.payload;
+          } else if (frame.type === "error") {
+            streamError = frame.error ?? "这一轮暂时没有生成成功";
+          }
+        };
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try { handleFrame(JSON.parse(line)); } catch { /* 半帧，等下一块 */ }
+          }
+        }
+        if (buffer.trim()) { try { handleFrame(JSON.parse(buffer)); } catch { /* 尾部半帧丢弃 */ } }
+        if (streamError) throw new Error(streamError);
+        if (!finalPayload) throw new Error("这一轮暂时没有生成成功");
+        payload = finalPayload;
+      } else {
+        payload = await response.json() as TurnPayload;
+      }
       if (!response.ok || !payload.events || !payload.choices || !payload.state) {
         throw new Error(payload.error || "这一轮暂时没有生成成功");
       }
-      setMessages((current) => [
-        ...current,
-        ...payload.events!.map((event) => ({ ...event, id: makeId("event"), kind: "event" as const })),
-        ...(payload.mediaCues ?? []).map((cue) => ({ id: makeId("media"), kind: "media" as const, cue })),
-        ...(payload.turnHud ? [{ id: makeId("turn-hud"), kind: "media" as const, cue: payload.turnHud }] : []),
-      ]);
+      // 对账：一致则保留；不一致时只替换首个差异点之后的尾部（避免整卷闪换）
+      let firstDiff = 0;
+      const finalEvents = payload.events;
+      while (firstDiff < streamedEvents.length && firstDiff < finalEvents.length
+        && streamedEvents[firstDiff].text === finalEvents[firstDiff]?.text
+        && streamedEvents[firstDiff].type === finalEvents[firstDiff]?.type) {
+        firstDiff += 1;
+      }
+      const fullyMatches = firstDiff === streamedEvents.length && firstDiff === finalEvents.length;
+      const staleIds = streamedIds.slice(firstDiff);
+      setMessages((current) => {
+        const base = streamedIds.length && !fullyMatches
+          ? current.filter((item) => !staleIds.includes(item.id))
+          : current;
+        return [
+          ...base,
+          ...(streamedIds.length && fullyMatches
+            ? []
+            : finalEvents.slice(streamedIds.length ? firstDiff : 0).map((event) => ({ ...event, id: makeId("event"), kind: "event" as const }))),
+          ...(payload.mediaCues ?? []).map((cue) => ({ id: makeId("media"), kind: "media" as const, cue })),
+        ];
+      });
       setChoices(payload.choices);
       setRuntime(payload.state);
       if (payload.current?.chapterId) setCurrentChapterId(payload.current.chapterId);
@@ -287,7 +297,7 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
           setSettlementNextChapterId(nextChapterId);
           setSettlementQueued(false);
           chapterSettlementTimerRef.current = null;
-        }, CHAPTER_SETTLEMENT_REVEAL_DELAY_MS);
+        }, 7000);
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "这一轮暂时没有生成成功");
@@ -307,7 +317,7 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
     setChapterArchives({});
     setViewingChapterId(null);
     setChoices(story.opening.choices);
-    setRuntime(makeInitialState(story.id));
+    setRuntime(initialState);
     setCurrentChapterId("ch01");
     setChapterSettlement(null);
     setSettlementNextChapterId(null);
@@ -359,20 +369,12 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
 
   if (!entered) {
     return (
-      <main className={`xx-shell xx-story-${story.id}`} style={{ "--xx-accent": story.accent } as React.CSSProperties}>
-        {activeMusicTrack && (
-          <audio
-            ref={musicRef}
-            src={activeMusicTrack.src}
-            loop={musicTracks.length === 1}
-            onEnded={advanceMusicQueue}
-            preload="metadata"
-          />
-        )}
+      <main className="xx-shell" style={{ "--xx-accent": story.accent } as React.CSSProperties}>
+        {story.backgroundMusic && <audio ref={musicRef} src={story.backgroundMusic.src} loop preload="metadata" />}
         <header className="xx-topbar">
           <a href="/xianxia" aria-label="返回选择故事">←</a>
           <span>仙途故事档案</span>
-          <em>卷宗 01</em>
+          <em>卷宗 0{story.id === "immortal-sister" ? 1 : 2}</em>
         </header>
 
         <section className="xx-dossier-stage">
@@ -393,7 +395,7 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
               {dossierPage === 0 && (
                 <div className="xx-archive-page">
                   <p className="xx-archive-kicker">卷一 · 时代背景</p>
-                  <h2>{story.id === "steady-dao" ? "封神未落子，因果已先动" : "山门之外，天下已经变了"}</h2>
+                  <h2>山门之外，天下已经变了</h2>
                   <dl className="xx-archive-facts">
                     <div><dt>时间范围</dt><dd>{story.introduction.time}</dd></div>
                     <div><dt>故事地点</dt><dd>{story.introduction.place}</dd></div>
@@ -405,7 +407,7 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
               {dossierPage === 1 && (
                 <div className="xx-archive-page">
                   <p className="xx-archive-kicker">卷二 · 当前处境</p>
-                  <h2>{story.id === "steady-dao" ? "小琼峰今日原本无事" : "今夜，轮到你决定"}</h2>
+                  <h2>今夜，轮到你决定</h2>
                   <p className="xx-archive-lead">{story.introduction.situation}</p>
                   <div className="xx-objective-card">
                     <span>当前场景目标</span>
@@ -418,7 +420,7 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
               {dossierPage === 2 && (
                 <div className="xx-archive-page">
                   <p className="xx-archive-kicker">卷三 · 故事入口</p>
-                  <h2>{story.id === "steady-dao" ? "危险警示：西崖迷阵有人进入" : "危险警示：剑冢提前认出了你"}</h2>
+                  <h2>危险警示：剑冢提前认出了你</h2>
                   <p className="xx-archive-lead">{story.logline}</p>
                   <div className="xx-role-card">
                     <span>本次由你扮演</span>
@@ -448,7 +450,7 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
           <header><span>本故事主要角色</span><small>点击查看人物档案</small></header>
           <div>
             {story.characters.filter((character) => character.featured !== false).map((character) => (
-              <button key={character.id} onClick={() => setActiveCharacter((current) => current?.id === character.id ? null : character)}>
+              <button key={character.id} onClick={() => setActiveCharacter(character)}>
                 <CharacterPortrait character={character} />
                 <b>{character.name}</b>
                 <small>{character.role}</small>
@@ -465,38 +467,21 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
   }
 
   return (
-    <main
-      className={`xx-shell xx-play xx-story-${story.id}`}
-      style={{
-        "--xx-accent": story.accent,
-        "--xx-scene-top": activeBackground?.tone?.top ?? "#eef7ff",
-        "--xx-scene-middle": activeBackground?.tone?.middle ?? "#d9dff0",
-        "--xx-scene-bottom": activeBackground?.tone?.bottom ?? "#9daac7",
-      } as React.CSSProperties}
-    >
-      {activeMusicTrack && (
-        <audio
-          ref={musicRef}
-          src={activeMusicTrack.src}
-          loop={musicTracks.length === 1}
-          onEnded={advanceMusicQueue}
-          preload="metadata"
-        />
-      )}
+    <main className="xx-shell xx-play" style={{ "--xx-accent": story.accent } as React.CSSProperties}>
+      {story.backgroundMusic && <audio ref={musicRef} src={story.backgroundMusic.src} loop preload="metadata" />}
       <header className="xx-playbar">
         <button onClick={restart}>从头开始</button>
-        <nav className="xx-playbar-cast" aria-label="主要角色">
-          {story.characters.filter((character) => character.featured !== false).map((character) => (
-            <button
-              key={character.id}
-              onClick={() => setActiveCharacter((current) => current?.id === character.id ? null : character)}
-              aria-label={`查看${character.name}`}
-              aria-pressed={activeCharacter?.id === character.id}
-            >
-              <CharacterPortrait character={character} />
-            </button>
-          ))}
-        </nav>
+        {story.id === "immortal-sister" ? (
+          <nav className="xx-playbar-cast" aria-label="主要角色">
+            {story.characters.filter((character) => character.featured !== false).map((character) => (
+              <button key={character.id} onClick={() => setActiveCharacter(character)} aria-label={`查看${character.name}`}>
+                <CharacterPortrait character={character} />
+              </button>
+            ))}
+          </nav>
+        ) : (
+          <div><small>{story.subtitle}</small><strong>{story.title}</strong></div>
+        )}
         <div className="xx-playbar-actions">
           {story.backgroundMusic && (
             <button type="button" onClick={toggleMusic} aria-pressed={musicPlaying}>
@@ -516,11 +501,9 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
         </div>
       </header>
 
-      {activeBackground && (
+      {story.id === "immortal-sister" && activeBackground && (activeBackground.video || activeBackground.image) && (
         <section className="xx-scene-media" aria-label={activeBackground.label}>
-          {activeBackground.image ? (
-            <img key={activeBackground.image} src={activeBackground.image} alt={activeBackground.label} />
-          ) : activeBackground.video ? (
+          {activeBackground.video ? (
             <video
               key={activeBackground.video}
               src={activeBackground.video}
@@ -531,8 +514,21 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
               playsInline
               preload="metadata"
             />
-          ) : null}
+          ) : (
+            <img key={activeBackground.image} src={activeBackground.image} alt={activeBackground.label} />
+          )}
         </section>
+      )}
+
+      {story.id !== "immortal-sister" && (
+        <nav className="xx-cast-strip" aria-label="在场人物">
+          {story.characters.map((character) => (
+            <button key={character.id} onClick={() => setActiveCharacter(character)}>
+              <CharacterPortrait character={character} />
+              <span>{character.name}</span>
+            </button>
+          ))}
+        </nav>
       )}
 
       <section className="xx-transcript" ref={transcriptStartRef}>
@@ -543,18 +539,60 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
           if (item.kind === "player") {
             return <div className="xx-player-message" key={item.id}><small>你</small><p>{item.text}</p></div>;
           }
-          if (item.type !== "dialogue" || !item.person) {
-            return <p className="xx-narration" key={item.id}>{item.text}</p>;
-          }
-          const character = characterById.get(item.person);
-          return (
-            <article className={`xx-npc-event xx-${item.type}`} key={item.id}>
-              <button onClick={() => character && setActiveCharacter((current) => current?.id === character.id ? null : character)}>{character ? <CharacterPortrait character={character} /> : "·"}</button>
-              <div>
-                {character && <header>{character.name}</header>}
+          const showFirstResponseIllustration = story.id === "immortal-sister"
+            && displayedChapterId === "ch01"
+            && item.id === firstResponseEventId;
+          let eventContent;
+          if (item.type === "system") {
+            eventContent = <div className="xx-system-event">{item.text}</div>;
+          } else if (item.type === "loot") {
+            eventContent = (
+              <div className="xx-loot-event">
                 <p>{item.text}</p>
+                {item.items && item.items.length > 0 && (
+                  <ul>
+                    {item.items.map((loot, lootIndex) => (
+                      <li key={lootIndex}><strong>{loot.name}</strong> ×{loot.qty}{loot.note ? <span> —— {loot.note}</span> : null}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
-            </article>
+            );
+          } else if (item.type === "os" && item.person) {
+            const osCharacter = characterById.get(item.person);
+            eventContent = (
+              <article className="xx-npc-event xx-dialogue">
+                <button onClick={() => osCharacter && setActiveCharacter(osCharacter)}>{osCharacter ? <CharacterPortrait character={osCharacter} /> : "·"}</button>
+                <div>
+                  <header>{osCharacter?.name ?? "现场"}</header>
+                  <p className="xx-os-inline">（os：{item.text}）</p>
+                </div>
+              </article>
+            );
+          } else if (item.type !== "dialogue" || !item.person) {
+            eventContent = <p className="xx-narration">{renderRichText(item.text)}</p>;
+          } else {
+            const character = characterById.get(item.person);
+            eventContent = (
+              <article className={`xx-npc-event xx-${item.type}`}>
+                <button onClick={() => character && setActiveCharacter(character)}>{character ? <CharacterPortrait character={character} /> : <i>{item.person.slice(0, 1)}</i>}</button>
+                <div>
+                  <header>{character?.name ?? item.person}</header>
+                  <p>{item.text}</p>
+                </div>
+              </article>
+            );
+          }
+          return (
+            <Fragment key={item.id}>
+              {eventContent}
+              {showFirstResponseIllustration && (
+                <figure className="xx-story-illustration">
+                  <img src="/xianxia/immortal-sister/story/ch01-first-response-courtyard-v1.png" alt="白日院落里，闻照雪与桑迟俯身看向授剑录，裴行舟立在庭外" />
+                  <figcaption>白庭日光 · 授剑录前</figcaption>
+                </figure>
+              )}
+            </Fragment>
           );
         })}
         {pending && <p className="xx-pending">山风里，有人正在组织下一句话……</p>}
@@ -599,7 +637,7 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
                     id: makeId("chapter-entry"),
                     kind: "event",
                     type: "narration",
-                    text: nextChapter?.entry ?? `第${nextChapterNumber}章 · ${nextChapter?.title ?? "新的旅程"}。`,
+                    text: nextChapter?.entry ?? `第${nextChapterNumber}章 · ${nextChapter?.title ?? "新的旅程"}。${nextChapter?.summary ?? "眼前的局面已经改变。"}`,
                   }]);
                   setChoices(nextChapter?.entryChoices ?? [
                     { kind: "action", text: "先观察眼前的新情况" },
@@ -672,89 +710,6 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
   );
 }
 
-export function XianxiaMaterialPreview({ story }: { story: PublicXianxiaStory }) {
-  const firstBackground = story.chapterBackgrounds?.[story.chapters[0]?.id ?? "ch01"];
-
-  return (
-    <main className={`xx-material-preview xx-story-${story.id}`} style={{ "--xx-accent": story.accent } as React.CSSProperties}>
-      <header className="xx-material-preview-bar">
-        <a href="/xianxia?story=steady-dao">← 返回故事</a>
-        <div><small>QUICK MATERIAL VIEW</small><strong>素材快览</strong></div>
-        <span>5 章</span>
-      </header>
-
-      <section className="xx-material-paper-demo">
-        {firstBackground?.video && (
-          <video
-            src={firstBackground.video}
-            poster={firstBackground.poster}
-            autoPlay
-            loop
-            muted
-            playsInline
-            preload="metadata"
-          />
-        )}
-        <article>
-          <small>聊天纸张 · 粉白宣纸</small>
-          <h1>小琼峰的风，先把花香送进了院子。</h1>
-          <p>外层保留淡蓝与薄粉的晨雾色，正文落在更暖、更亮的粉白纸面上。纸张和背景靠柔光与阴影分层，不再用竖线或硬边拼接。</p>
-          {story.initialHud && <MediaCueCard cue={story.initialHud} />}
-        </article>
-      </section>
-
-      <section className="xx-material-chapters" aria-label="五章素材预览">
-        {story.chapters.map((chapter, index) => {
-          const background = story.chapterBackgrounds?.[chapter.id];
-          const ending = story.chapterEndPreviews?.find((item) => item.chapterId === chapter.id);
-          return (
-            <article className="xx-material-chapter" key={chapter.id}>
-              <header>
-                <small>CHAPTER {String(index + 1).padStart(2, "0")}</small>
-                <h2>{chapter.title}</h2>
-                <p>{chapter.summary}</p>
-              </header>
-              {background?.video ? (
-                <figure className="xx-material-motion">
-                  <video src={background.video} poster={background.poster} autoPlay loop muted playsInline preload="metadata" />
-                  <figcaption>动态背景 · {background.label}</figcaption>
-                </figure>
-              ) : background?.image ? (
-                <figure className="xx-material-motion">
-                  <img src={background.image} alt={background.label} />
-                  <figcaption>章节背景 · {background.label}</figcaption>
-                </figure>
-              ) : null}
-              {ending && (
-                <article className="xx-preview-settlement xx-material-settlement" aria-label={`第${ending.chapterNumber}章完成预览`}>
-                  <header>
-                    <small>CHAPTER {String(ending.chapterNumber).padStart(2, "0")} COMPLETE</small>
-                    <span>第{ending.chapterNumber}章 · 完成</span>
-                    <h1>{ending.title}</h1>
-                    <p>{ending.summary}</p>
-                    {ending.nextObjective && (
-                      <div className="xx-preview-next-objective">
-                        <small>下一章目标</small>
-                        <strong>{ending.nextObjective}</strong>
-                      </div>
-                    )}
-                  </header>
-                  <section className="xx-preview-content">
-                    {ending.content.map((cue) => <MediaCueCard cue={cue} key={cue.id} />)}
-                  </section>
-                  <footer className="xx-preview-actions">
-                    <button type="button" disabled>继续进入下一章 →</button>
-                  </footer>
-                </article>
-              )}
-            </article>
-          );
-        })}
-      </section>
-    </main>
-  );
-}
-
 function MediaCueCard({ cue }: { cue: XianxiaMediaCue }) {
   if (cue.kind === "image") {
     return (
@@ -764,8 +719,16 @@ function MediaCueCard({ cue }: { cue: XianxiaMediaCue }) {
       </figure>
     );
   }
+  if (cue.kind === "video") {
+    return (
+      <figure className="xx-story-illustration xx-triggered-media">
+        <video src={cue.src} poster={cue.poster} autoPlay muted loop playsInline controls aria-label={cue.alt} />
+        <figcaption>{cue.caption}</figcaption>
+      </figure>
+    );
+  }
   return (
-    <aside className={`xx-hud-card${cue.compact ? " xx-turn-hud" : ""}`} aria-label={cue.title}>
+    <aside className="xx-hud-card" aria-label={cue.title}>
       <small>{cue.eyebrow}</small>
       <h3>{cue.title}</h3>
       <dl>

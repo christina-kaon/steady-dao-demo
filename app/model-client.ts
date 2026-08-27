@@ -1,3 +1,5 @@
+import { jsonrepair } from "jsonrepair";
+
 type ModelEnv = {
   DEEPSEEK_API_KEY?: string;
   DEEPSEEK_MODEL?: string;
@@ -69,6 +71,13 @@ export function parseModelJson(raw: string): unknown {
     } catch {
       // Keep looking: a model may place a small JSON example before the real object.
     }
+  }
+
+  // 台词里的裸引号等破损（历史发生率 ~13%）：修复后返回，而不是抛错触发整轮重生成。
+  try {
+    return JSON.parse(jsonrepair(text));
+  } catch {
+    // fall through to the original error
   }
 
   throw directError instanceof Error ? directError : new Error("model_json_invalid");
@@ -218,4 +227,68 @@ export async function callStoryModel(
   }
 
   throw new Error(`${stage}_${lastFailure}${lastError instanceof Error ? `: ${lastError.message}` : ""}`);
+}
+
+export async function callStoryModelStream(
+  system: string,
+  user = "请严格执行并只输出JSON。",
+  temperature = 0.65,
+  maxTokens = 4000,
+  options: { requestTimeoutMs?: number; primaryModel?: string } = {},
+  onText?: (fullText: string) => void,
+): Promise<string> {
+  const runtimeEnv = process.env as ModelEnv;
+  const apiKey = runtimeEnv.DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new Error("missing_api_key");
+  const model = options.primaryModel
+    || runtimeEnv.STORY_MODEL
+    || process.env.STORY_MODEL
+    || runtimeEnv.DEEPSEEK_MODEL
+    || "kaon/gemini-3.7-flash";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.requestTimeoutMs ?? 45000);
+  try {
+    const response = await fetch("https://kaon-router.kaonai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "system", content: system }, { role: "user", content: user }],
+        max_tokens: maxTokens,
+        temperature,
+        stream: true,
+      }),
+    });
+    if (!response.ok || !response.body) throw new Error(`model_stream_upstream_${response.status}`);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let fullText = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const data = trimmed.slice(5).trim();
+        if (data === "[DONE]") continue;
+        try {
+          const chunk = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> };
+          const delta = chunk.choices?.[0]?.delta?.content;
+          if (delta) {
+            fullText += delta;
+            onText?.(fullText);
+          }
+        } catch { /* 不完整的 SSE 行：忽略 */ }
+      }
+    }
+    if (!fullText.trim()) throw new Error("model_stream_empty");
+    return fullText;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
