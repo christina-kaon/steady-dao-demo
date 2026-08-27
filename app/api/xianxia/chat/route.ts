@@ -374,13 +374,20 @@ function inferAssertedLocation(input: string, inputKind: string) {
   const hasCompletedMarker = /(?:已经|已|终于|到了|到达|抵达|来到|赶到|回到|返回|进入|身在|身处|现在在|此刻在)/.test(input);
   if (!hasCompletedMarker && /(?:想|打算|计划|准备|希望|要不要|能不能|不如)/.test(input)) return null;
   const text = input.replace(/[（）()【】[\]]/g, " ");
-  const completed = text.match(/(?:已经|已|终于|如今|现在|此刻)?(?:到达|抵达|来到|赶到|回到|返回|进入|身在|身处|已经在|如今在|已在|现在在|此刻在|到了|(?<![签迟想说提遇看听感找得没])到)(?:了)?\s*([^，。！？!?；;\s』」”"）)]{1,18})/u)?.[1];
+  const completed = text.match(/(?:已经|已|终于|如今|现在|此刻)?(?:到达|抵达|来到|赶到|回到|返回|进入|身在|身处|已经在|如今在|已在|现在在|此刻在|到了|(?<![签迟想说提遇看听感找得没息等直熬])到)(?:了)?\s*([^，。！？!?；;\s』」”"）)]{1,18})/u)?.[1];
   const instantMove = text.match(/(?:瞬移|传送|挪移|闪现|飞遁|御剑|腾云)(?:到|去|至|往)(?:了)?\s*([^，。！？!?；;\s』」”"）)]{1,18})/u)?.[1];
   const actionTravel = inputKind === "action"
     ? input.match(/(?:前往|赶往|动身去|出发去)\s*([^，。！？!?；;\s]{1,18})/u)?.[1]
     : null;
   const candidate = (completed ?? instantMove ?? actionTravel)?.replace(/(?:这里|此地|了|吧|呗|嘛)$/u, "").trim();
-  return candidate && [...candidate].length >= 1 ? compactText(candidate, 40) : null;
+  if (!candidate || ![...candidate].length) return null;
+  // 180 轮连跑抓出的四类误伤，逐类挡掉：
+  if (/(哪里|哪儿|何处|何方)/.test(candidate)) return null;            // 无问号疑问句："现在在哪里"
+  if (/^[后前时中]/.test(candidate)) return null;                       // 时间从句碎片："到达后先查清对方的底牌"
+  if (/(之前|以前|前)$/.test(candidate)) return null;                   // 未完成动作："进入遗迹前"
+  if (/^(天亮|天黑|深夜|半夜|夜里|清晨|黎明|黄昏|傍晚|正午|午后|明日|明天|次日|来日|[子丑寅卯辰巳午未申酉戌亥]时)/.test(candidate)) return null; // 时间词："休息到天亮"
+  if ([...candidate].length > 6 && /[先再才就便即且并]/.test(candidate)) return null; // 动词短语污染兜底
+  return compactText(candidate, 40);
 }
 
 function normalizeSceneDelta(value: unknown): SceneDelta {
@@ -424,7 +431,10 @@ function mergeSceneMemory(base: SceneMemory, delta: SceneDelta, assertedLocation
   const movementBlocked = /(?:未能|没能|无法|被拦|拦住|仍在原地|并未抵达|没有抵达)/.test(events.slice(0, 2).map((event) => event.text).join(" "));
   return {
     ...(delta.time ? { time: delta.time } : base.time ? { time: base.time } : {}),
-    location: !movementBlocked && assertedLocation ? assertedLocation : delta.location ?? base.location,
+    // 断言承认优先，但模型给出的层级版位置（含断言地点、按版图从大到小）比裸词更完整时用模型的。
+    location: !movementBlocked && assertedLocation
+      ? (delta.location && delta.location.includes(assertedLocation) ? delta.location : assertedLocation)
+      : delta.location ?? base.location,
     facts: append(remove(base.facts, delta.factsResolved), delta.factsAdded, 14),
     unresolvedThreads: append(remove(base.unresolvedThreads, delta.threadsResolved), delta.threadsOpened, 8),
     relationshipNotes: append(base.relationshipNotes, delta.relationshipNotes, 8),
