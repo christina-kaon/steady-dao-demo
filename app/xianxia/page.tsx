@@ -28,6 +28,7 @@ function toPublicStory(story: XianxiaStory): PublicXianxiaStory {
       featured,
     })),
     opening: { events: story.opening.events, choices: story.opening.choices },
+    initialLocation: story.segments[0]?.location,
     chapterBackgrounds: story.chapterBackgrounds,
     chapterEndPreviews: story.chapterEndPreviews,
     backgroundMusic: story.backgroundMusic,

@@ -157,3 +157,6 @@ body{background:#05070a}
 .xx-dossier h1{text-shadow:0 2px 18px color-mix(in srgb,var(--xx-accent) 34%,transparent)}
 .xx-topbar span{letter-spacing:.22em}
 ::selection{background:color-mix(in srgb,var(--xx-accent) 40%,#000);color:#fff}
+
+/* 位置锚：playbar 下方常显的层级地理定位 */
+.xx-location-anchor{position:absolute;bottom:calc(100% + 5px);left:0;right:0;text-align:center;font-size:.64rem;letter-spacing:.18em;color:color-mix(in srgb,var(--xx-accent) 46%,#5d6b66);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;text-shadow:0 1px 3px rgba(244,247,240,.9)}

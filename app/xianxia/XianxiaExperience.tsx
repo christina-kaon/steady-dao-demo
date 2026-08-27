@@ -56,6 +56,7 @@ export type PublicXianxiaStory = {
     events: XianxiaEvent[];
     choices: XianxiaChoice[];
   };
+  initialLocation?: string;
   chapterBackgrounds?: Record<string, { video?: string; image?: string; poster?: string; label: string; tone?: { top: string; middle: string; bottom: string } }>;
   chapterEndPreviews?: Array<{
     chapterId: string;
@@ -103,6 +104,7 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
   const [choices, setChoices] = useState<XianxiaChoice[]>(story.opening.choices);
   const [runtime, setRuntime] = useState<RuntimeState>(initialState);
   const [currentChapterId, setCurrentChapterId] = useState("ch01");
+  const [currentLocation, setCurrentLocation] = useState(story.initialLocation ?? "");
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -286,6 +288,7 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
       setChoices(payload.choices);
       setRuntime(payload.state);
       if (payload.current?.chapterId) setCurrentChapterId(payload.current.chapterId);
+      if (payload.current?.location) setCurrentLocation(payload.current.location);
       if (payload.chapterComplete) {
         setChoices([]);
         setSettlementQueued(true);
@@ -319,6 +322,7 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
     setChoices(story.opening.choices);
     setRuntime(initialState);
     setCurrentChapterId("ch01");
+    setCurrentLocation(story.initialLocation ?? "");
     setChapterSettlement(null);
     setSettlementNextChapterId(null);
     setSettlementQueued(false);
@@ -660,6 +664,9 @@ export default function XianxiaExperience({ story }: { story: PublicXianxiaStory
       )}
 
       <section className="xx-interaction-dock" hidden={Boolean(viewingChapterId)}>
+        <div className="xx-location-anchor" aria-label="当前位置">
+          {story.introduction.place}{currentLocation ? ` · ${currentLocation}` : ""}
+        </div>
         <form className="xx-composer" onSubmit={(event) => { event.preventDefault(); void send(draft, "freeform"); }}>
           <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="或者直接说你想做什么……" disabled={pending || settlementQueued || Boolean(chapterSettlement)} />
           <button type="submit" disabled={pending || settlementQueued || Boolean(chapterSettlement) || !draft.trim()} aria-label="发送">↑</button>

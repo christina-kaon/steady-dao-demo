@@ -1056,6 +1056,7 @@ function promptForTurn(args: {
       .map((character) => ({ id: character.id, name: character.name, story_core: compactText(character.storyCore, 60) })),
     focus_relationships: focusRelationships,
     present_relationships: presentRelationships,
+    ...(story.worldAtlas ? { world_atlas: { usage: "本故事的地理坐标系。人物移动、提及远方、生成新地点时按版图推方位与距离，未列出的地点须与版图逻辑相容；scene_delta.location 从大到小写（宗门/区域·峰/地界·具体点）。", atlas: story.worldAtlas } } : {}),
     ...(canon ? { canon_worldbook: canon } : {}),
     world_processes: {
       usage: "世界在玩家之外自行推进的进程（数据）。正文可以让其显现为可见迹象或事件；本轮若某进程实际推进，在scene_delta.world_process_moves如实汇报；某进程走完‘合’后可在scene_delta.new_process给一条新的‘起’。不强制每轮推进。",
@@ -1381,6 +1382,7 @@ async function runXianxiaTurn(body: TurnBody, onEvent?: (event: StreamedEvent) =
         offstage_characters: story.characters
           .filter((character) => !present.includes(character.id))
           .map((character) => ({ id: character.id, name: character.name })),
+        ...(story.worldAtlas ? { world_atlas: story.worldAtlas } : {}),
         relationships: story.relationships.filter((relationship) => relationship.roles.every((role) => presentOrPlayerIds.has(role))),
         storybook_candidates: storybookCandidates.map(({ id: _id, ...candidate }) => candidate),
         world_processes: worldProcesses,
