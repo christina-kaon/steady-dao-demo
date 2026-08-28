@@ -63,6 +63,14 @@ type SceneMemory = {
   lastClosingMode: ClosingMode;
 };
 
+type WorldEntity = {
+  kind: "npc" | "place" | "item" | "org" | "art";
+  name: string;
+  essence: string;
+  state: string;
+  ties: string;
+};
+
 type SceneDelta = {
   time: string | null;
   location: string | null;
@@ -78,6 +86,8 @@ type SceneDelta = {
   itemsLost: unknown;
   npcBelongingsUpdates: unknown;
   npcRelationUpdates: unknown;
+  newEntities: unknown;
+  entityUpdates: unknown;
 };
 
 type ClientState = {
@@ -95,6 +105,7 @@ type ClientState = {
   npcRelations?: Array<{ pair: [string, string]; warmth: number; tension: number; note: string }>;
   npcStates?: Record<string, { mood: string; stanceToPlayer: string; recentPatterns: string[] }>;
   scenePresent?: string[];
+  worldEntities?: WorldEntity[];
 };
 
 type StoryRouting = "follow" | "echo" | "invite" | "trigger" | "diverge";
@@ -410,6 +421,8 @@ function normalizeSceneDelta(value: unknown): SceneDelta {
     itemsLost: item.items_lost ?? null,
     npcBelongingsUpdates: item.npc_belongings_updates ?? null,
     npcRelationUpdates: item.npc_relation_updates ?? null,
+    newEntities: item.new_entities ?? null,
+    entityUpdates: item.entity_updates ?? null,
   };
 }
 
@@ -557,6 +570,44 @@ function applyNpcRelationUpdates(current: NpcRelation[], updates: unknown): NpcR
       out.push({ pair: [a, b], warmth: clamp(50 + wd, 0, 100), tension: clamp(30 + td, 0, 100), note: note ?? "" });
     }
   }
+  return out;
+}
+
+// 世界实体账本：模型现编的新NPC/新地点/新造物/新组织/新功法的"出生档案"。
+// 每条压缩为五个短字段，上限 16 条（LRU：更新即移到尾部，满了挤掉最久未动的）。
+const entityKinds = new Set(["npc", "place", "item", "org", "art"]);
+function cleanWorldEntities(value: unknown): WorldEntity[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((raw): WorldEntity[] => {
+    if (!raw || typeof raw !== "object") return [];
+    const e = raw as Record<string, unknown>;
+    const name = typeof e.name === "string" ? compactText(e.name.trim(), 16) : "";
+    if (!name || !entityKinds.has(String(e.kind))) return [];
+    return [{
+      kind: e.kind as WorldEntity["kind"],
+      name,
+      essence: typeof e.essence === "string" ? compactText(e.essence, 40) : "",
+      state: typeof e.state === "string" ? compactText(e.state, 30) : "",
+      ties: typeof e.ties === "string" ? compactText(e.ties, 30) : "",
+    }];
+  }).slice(0, 16);
+}
+
+function mergeWorldEntities(base: WorldEntity[], newEntities: unknown, entityUpdates: unknown): WorldEntity[] {
+  let out = [...base];
+  const upsert = (entity: WorldEntity) => {
+    const i = out.findIndex((x) => x.name === entity.name);
+    if (i >= 0) {
+      const prev = out[i];
+      out.splice(i, 1);
+      out.push({ ...prev, state: entity.state || prev.state, ties: entity.ties || prev.ties, essence: prev.essence || entity.essence });
+    } else {
+      out.push(entity);
+    }
+  };
+  for (const entity of cleanWorldEntities(newEntities)) upsert(entity);
+  for (const entity of cleanWorldEntities(entityUpdates)) upsert(entity);
+  if (out.length > 16) out = out.slice(-16);
   return out;
 }
 
@@ -849,7 +900,7 @@ function normalizeTurn(value: unknown, story: XianxiaStory, present: string[], m
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
   if (!Array.isArray(item.events) || !Array.isArray(item.choices)) return null;
-  const events = item.events.flatMap((raw) => cleanRawEvent(raw, story)).slice(0, 18);
+  const events = item.events.flatMap((raw) => cleanRawEvent(raw, story)).slice(0, 12);
   if (events.length < 5) return null;
 
   const choices = item.choices.flatMap((raw): XianxiaChoice[] => {
@@ -883,7 +934,7 @@ function createStreamEventProcessor(story: XianxiaStory, present: string[], onEv
   // 同人台词的尾部，流式必须做同样的前瞻，否则中部就会与终版分歧。
   let pendingOs: XianxiaEvent | null = null;
   let sent = 0;
-  // 与 normalizeTurn 的 slice(0, 18) 对齐：清洗后第 19 条起终版不会保留，流式也不许下发。
+  // 与 normalizeTurn 的 slice(0, 12) 对齐：清洗后第 13 条起终版不会保留，流式也不许下发。
   let cleanedCount = 0;
   const transform = (event: XianxiaEvent): XianxiaEvent[] =>
     splitLongDialogue(promoteQuotedSpeech([event], story, present));
@@ -901,7 +952,7 @@ function createStreamEventProcessor(story: XianxiaStory, present: string[], onEv
     push(raw: unknown) {
       const cleaned: XianxiaEvent[] = [];
       for (const item of cleanRawEvent(raw, story)) {
-        if (cleanedCount >= 18) break;
+        if (cleanedCount >= 12) break;
         cleanedCount += 1;
         cleaned.push(item);
       }
@@ -974,6 +1025,7 @@ function promptForTurn(args: {
   npcBelongings?: Record<string, LedgerItem[]>;
   npcRelations?: NpcRelation[];
   npcStates?: Record<string, NpcState>;
+  worldEntities?: WorldEntity[];
 }) {
   const {
     story,
@@ -996,6 +1048,7 @@ function promptForTurn(args: {
     npcBelongings = {},
     npcRelations = [],
     npcStates = {},
+    worldEntities = [],
   } = args;
   const segment = story.segments[segmentIndex];
   const presentCharacters = story.characters
@@ -1078,6 +1131,7 @@ function promptForTurn(args: {
     player_inventory: { usage: "玩家背包账本。获得/失去物品用loot事件呈现并在scene_delta.items_gained/items_lost登记；账本内容跨轮一致，不得凭空消失。", items: inventory },
     npc_belongings: { usage: "NPC随身物品账本。玩家首次查看/偷看某NPC物品时现场生成合理内容并在scene_delta.npc_belongings_updates整表登记；已登记的下次必须一致。", records: npcBelongings },
     npc_relations: { usage: "NPC之间的情感账本（warmth亲近0-100/tension张力0-100）。他们彼此的语气、袒护、拆台应与当前值相称；本轮NPC间互动造成变化时在scene_delta.npc_relation_updates汇报增减（-5到+5）。", pairs: npcRelations },
+    world_entities: { usage: "世界实体账本：此前剧情中诞生的新人物/新地点/新造物/新组织/新功法的出生档案，属性跨轮一致，不得改设或遗忘。玩家引入或剧情长出新实体时在scene_delta.new_entities登记（kind取npc/place/item/org/art，name≤8字，essence一句话本质≤20字，state当前状态≤15字，ties与谁有关≤15字）；已登记实体状态变化时在scene_delta.entity_updates更新其state/ties。", entities: worldEntities },
     ...(directorBeat ? { director_beat: { usage: "隐藏导演对本轮的拍板：正文按beat_outline节点顺序推进——变化节点写足、过渡节点从简，本轮核心变化在中部节点完成，不得把全部变化堆到结尾；每名角色的表现依其persona三层与current_state（mood/stance）落笔，不复读recent_patterns里的旧反应模式；反应形状按engagement执行：focus时只有focus_person做主要回应、其他人至多背景小动作或整轮沉默，ensemble时被卷入者互相接话互相冲突（甲怼乙、乙拉丙），禁止每人各自对玩家说一句的排队式反应；结尾落在closing_direction指向的具体钩子上。若拍板与正史或玩家本轮实际行动冲突，以正史与玩家行动优先。", ...directorBeat } } : {}),
     recent_visible_events: history,
     scene_memory: sceneMemory,
@@ -1140,7 +1194,7 @@ ${JSON.stringify(runtimePacket)}
 玩家本轮明确提交：${JSON.stringify(input)}
 
 生成规则：
-- 每一轮是衔接自然的连续两场戏：beat_outline的每个节点都必须实际演出（谁做什么、出现什么），不许把任何节点一笔带过或合并跳过。第一场戏完整演完后，它的钩子必须当场兑现并展开成第二场戏——第二场同样要有自己的核心变化与完整展开，不许只开个头就收。两场戏之间不加任何幕次标记、场景分隔符或"与此同时/另一边/片刻之后"式转场套话：用动作、声响、人物进出或视线移动把戏自然接进下一场，读起来是一段连续的剧情。全轮合计10至18个events、1400至2200个中文字符。每场戏各有信息增量（新事实、新关系动向、可读的新细节，每场至少两样）；全轮以第二场戏的新钩子收拍。玩家输入再短，两场戏也要演完整；不用重复、排比、总结凑字。对白必须拆碎：单条dialogue以一两句话为宜（一般不超过60字），同一角色可以在一轮内多次开口、被打断、接话、补一句；严禁让任何角色一次性说一大段台词，长内容拆成多条气泡与动作narration交替。
+- 每一轮就是一场完整的戏：beat_outline的每个节点都必须实际演出（谁做什么、出现什么），不许把任何节点一笔带过或合并跳过。全轮合计6至12个events、900至1400个中文字符。每场戏必有信息增量（新事实、新关系动向、可读的新细节，至少两样）与落幕镜头；不加"与此同时/另一边/片刻之后"式转场套话。玩家输入再短，这场戏也要演完整；不用重复、排比、总结凑字。对白必须拆碎：单条dialogue以一两句话为宜（一般不超过60字），同一角色可以在一轮内多次开口、被打断、接话、补一句；严禁让任何角色一次性说一大段台词，长内容拆成多条气泡与动作narration交替。
 - 因果顺序铁律：第一个event必须是旁白，把玩家本轮声明的行动可见地落地——他做的事已经发生或正在推进，现场随之出现什么状态变化（东西成形、门被推开、阵纹亮起），用白描写出来；不改写玩家意图，不添加他没说的决定与心理；行动被既有规则阻止时也要演出阻止过程。NPC的反应从落地之后开始，回应的是这个已经发生的事实，而不是抢在行动落地前就开口评论。
 - NPC回应的是玩家这一次实际说了什么、做了什么以及它造成的可见变化，不是角色模板。玩家沉默不自动等于隐瞒，含糊不自动等于装傻，拒绝不自动等于嘴硬，突然冒险也不能被改写成“仍在稳健布局”。既有声誉只能造成期待或反差，不能覆盖当下表现。
 - 玩家必须是场面的行动中心：NPC的判断、请求、试探、照顾或阻拦要落到“你现在能决定什么”。
@@ -1163,7 +1217,7 @@ ${JSON.stringify(runtimePacket)}
 - 只输出JSON，不输出解释、思维过程、导演计划、摘要或可见状态卡。
 
 输出结构：
-{"story_routing":"follow","activated_candidate":null,"chapter_complete":false,"events":[{"type":"narration","text":"现场正文"},{"type":"dialogue","person":"注册角色一律写其id（含本轮新登场的offstage角色）；临时人物（街边掌柜/路人等）直接写其称谓且全轮一致","text":"说出口的话"},{"type":"os","person":"角色id","text":"该角色此刻未说出口的真实心声（导演os_assignments指定时使用）"},{"type":"system","text":"系统口吻回执（装载/结算/判定时使用）"},{"type":"loot","text":"获得物品的一句话","items":[{"name":"物品名","qty":1,"note":"一句说明"}]}],"choices":[{"kind":"speech","text":"玩家言行"},{"kind":"action","text":"相反方向言行"}],"hud_delta":{"steadiness":0,"jiujiu_affection":0,"lan_affection":0,"cultivation":0},"scene_delta":{"time":null,"location":null,"facts_added":[],"facts_resolved":[],"threads_opened":[],"threads_resolved":[],"relationship_notes":[],"closing_mode":"action","world_process_moves":[{"id":"进程id","advance":false,"note":""}],"new_process":null,"items_gained":[],"items_lost":[],"npc_belongings_updates":[{"person":"角色id","items":[{"name":"","qty":1,"note":""}]}],"npc_relation_updates":[{"pair":["角色id","角色id"],"warmth_delta":0,"tension_delta":0,"note":""}]}}`;
+{"story_routing":"follow","activated_candidate":null,"chapter_complete":false,"events":[{"type":"narration","text":"现场正文"},{"type":"dialogue","person":"注册角色一律写其id（含本轮新登场的offstage角色）；临时人物（街边掌柜/路人等）直接写其称谓且全轮一致","text":"说出口的话"},{"type":"os","person":"角色id","text":"该角色此刻未说出口的真实心声（导演os_assignments指定时使用）"},{"type":"system","text":"系统口吻回执（装载/结算/判定时使用）"},{"type":"loot","text":"获得物品的一句话","items":[{"name":"物品名","qty":1,"note":"一句说明"}]}],"choices":[{"kind":"speech","text":"玩家言行"},{"kind":"action","text":"相反方向言行"}],"hud_delta":{"steadiness":0,"jiujiu_affection":0,"lan_affection":0,"cultivation":0},"scene_delta":{"time":null,"location":null,"facts_added":[],"facts_resolved":[],"threads_opened":[],"threads_resolved":[],"relationship_notes":[],"closing_mode":"action","world_process_moves":[{"id":"进程id","advance":false,"note":""}],"new_process":null,"items_gained":[],"items_lost":[],"npc_belongings_updates":[{"person":"角色id","items":[{"name":"","qty":1,"note":""}]}],"npc_relation_updates":[{"pair":["角色id","角色id"],"warmth_delta":0,"tension_delta":0,"note":""}],"new_entities":[{"kind":"npc|place|item|org|art","name":"","essence":"一句话本质","state":"当前状态","ties":"与谁有关"}],"entity_updates":[{"kind":"item","name":"已登记实体名","state":"新状态","ties":""}]}}`;
 }
 
 type TurnBody = {
@@ -1366,6 +1420,7 @@ async function runXianxiaTurn(body: TurnBody, onEvent?: (event: StreamedEvent) =
       .filter((r) => !r.roles.includes(story.playerRole.id) && r.roles.length === 2)
       .map((r) => ({ pair: [r.roles[0], r.roles[1]] as [string, string], warmth: 55, tension: 35, note: compactText(r.tension, 80) })));
     const npcRelations = cleanNpcRelations(body.state?.npcRelations, npcRelationSeeds);
+    const worldEntities = cleanWorldEntities(body.state?.worldEntities);
     const npcStates = cleanNpcStates(body.state?.npcStates, story, present);
 
     // P3-A 隐藏导演：短结构化拍板；失败时优雅回落为单调用直出。
@@ -1393,6 +1448,7 @@ async function runXianxiaTurn(body: TurnBody, onEvent?: (event: StreamedEvent) =
           .filter((character) => !present.includes(character.id))
           .map((character) => ({ id: character.id, name: character.name })),
         ...(story.worldAtlas ? { world_atlas: story.worldAtlas } : {}),
+        world_entities: worldEntities,
         relationships: story.relationships.filter((relationship) => relationship.roles.every((role) => presentOrPlayerIds.has(role))),
         storybook_candidates: storybookCandidates.map(({ id: _id, ...candidate }) => candidate),
         world_processes: worldProcesses,
@@ -1401,8 +1457,8 @@ async function runXianxiaTurn(body: TurnBody, onEvent?: (event: StreamedEvent) =
         npc_relations: npcRelations,
         recent_history: history.slice(-8),
       };
-      const directorSystem = `你是互动仙侠故事的隐藏导演。不写玩家可见正文，不输出思维链，只为当前一拍输出一个JSON拍板。原则：先承认玩家本轮已造成的有效变化；只选真正相关的0-3名角色上场；角色行为由其private_goal、secret与关系张力决定；玩家引入新事物时定下其来源、限度与代价；world_processes只作机会性推进；encounter_beat.must_introduce为true时必须安排一个与玩家当前活动相关的带目的进场。满足优先：玩家索取的体验（读心心声/数值/面板清单）直接给足；storybook_candidates只是隐藏参考，玩家未指向主线时不选invite、不安排主线人物打断玩家当前玩法。os_assignments给0-2名本轮有内心戏价值的角色（口嫌体正直、表里反差优先），不逢人配OS。每名上场角色的visible_behavior必须依据其persona三层（surface外壳/core_want诉求/bedrock底色）与current_state（mood/stance_to_player）生成，且不得与其recent_patterns里的模式同轴——连续两轮同一种反应即为违规，换一个反应面。npc_state_updates汇报本轮互动造成的状态变化（mood可自由写，stance_to_player只能取戒备/试探/松动/亲近/裂痕且一次至多移一档，pattern用2-6字概括该角色本轮反应模式）。beat_outline把本轮编排成连续两幕共8-12个节点（stage取承接/发展/转/落，两幕各走一遍，发展与转可各有多个）。第一个节点固定为【玩家行动落地】：把玩家本轮已声明的行动渲染成可见的完成态或推进态（他做了什么→现场随之出现什么可见变化），这是把玩家正史演出来，不是代写——玩家没有声明过的行动、决定与心理仍然绝不能编；若行动被既有规则具体阻止，落地节点就演出阻止过程与真实后果。NPC反应与世界回应一律排在落地节点之后，回应的是这个已经发生的事实。第一幕完成一个核心变化（信息更新/关系位移/局面改变）后不许收束——第一幕的"落"必须当场翻成第二幕的开门（钩子当轮兑现：异动的来源现身、门后的东西露出、真相揭开一角、新的人带着目的进场），第二幕接着实际展开并完成第二个核心变化，不许只开头；两幕的核心变化各自落在该幕中部节点；每个节点的note要具体到可拍摄的事（谁做什么、出现什么），足以支撑200-300字的正文展开；除第一个落地节点（呈现玩家已声明行动的可见结果）外，其余节点的执行者只能是NPC、环境或世界事件，绝不把玩家的行动、反应或决定编排成节点内容——要推进就把局面推到玩家面前，等玩家自己动。engagement拍板本轮反应形状：私密对谈、一对一深交、单人求助时mode取focus并写focus_person（只有他做主要回应，其他人至多背景小动作）；宣布大事、公开冲突、多人利益同时被触及（修罗场）时mode取ensemble（被卷入者必须互相接话互相冲突，形成NPC对NPC的连锁，不许每人各自对玩家说一句）。玩家做偷窃/暗中行动等风险动作时，你按关系、情境与戏剧性裁定成、败或被抓个半截（loot_hint写结果）。npc_interaction可指定一对NPC本轮发生不经过玩家的互动及其性质（依npc_relations当前值：warmth低互相带刺、tension高正面冲突）。只输出JSON：{"beat_type":"relationship|daily|exploration|conflict|reveal|aftermath|world_event","beat_goal":"一句话","beat_outline":[{"stage":"承接|发展|转|落","note":"该节点一句话"}],"npc_state_updates":[{"id":"","mood":"","stance_to_player":"","pattern":""}],"story_routing":"follow|echo|invite|trigger|diverge","on_stage":["角色id"],"npc_motives":[{"id":"","want":"","behavior":""}],"world_change":null,"process_moves":[{"id":"","advance":false,"note":""}],"introduce_encounter":null,"closing_direction":"本轮结尾必须落在的具体钩子（新异动/未完动作/他人反应/环境变化，能自然勾出玩家下一步，不许平收）","engagement":{"mode":"focus|ensemble","focus_person":"角色id或null"},"os_assignments":[{"id":"","tone":""}],"loot_hint":null,"npc_interaction":null}`;
-      const rawBeat = await callStoryModel(directorSystem, JSON.stringify(directorPacket), 0.5, 2200);
+      const directorSystem = `你是互动仙侠故事的隐藏导演。不写玩家可见正文，不输出思维链，只为当前一拍输出一个JSON拍板。原则：先承认玩家本轮已造成的有效变化；只选真正相关的0-3名角色上场；角色行为由其private_goal、secret与关系张力决定；玩家引入新事物时定下其来源、限度与代价；world_processes只作机会性推进；encounter_beat.must_introduce为true时必须安排一个与玩家当前活动相关的带目的进场。满足优先：玩家索取的体验（读心心声/数值/面板清单）直接给足；storybook_candidates只是隐藏参考，玩家未指向主线时不选invite、不安排主线人物打断玩家当前玩法。os_assignments给0-2名本轮有内心戏价值的角色（口嫌体正直、表里反差优先），不逢人配OS。每名上场角色的visible_behavior必须依据其persona三层（surface外壳/core_want诉求/bedrock底色）与current_state（mood/stance_to_player）生成，且不得与其recent_patterns里的模式同轴——连续两轮同一种反应即为违规，换一个反应面。npc_state_updates汇报本轮互动造成的状态变化（mood可自由写，stance_to_player只能取戒备/试探/松动/亲近/裂痕且一次至多移一档，pattern用2-6字概括该角色本轮反应模式）。beat_outline把本轮编排成5-7个节点。第一个节点固定为【玩家行动落地】：把玩家本轮已声明的行动渲染成可见的完成态或推进态（他做了什么→现场随之出现什么可见变化），这是把玩家正史演出来，不是代写——玩家没有声明过的行动、决定与心理仍然绝不能编；若行动被既有规则具体阻止，落地节点就演出阻止过程与真实后果。NPC反应与世界回应一律排在落地节点之后，回应的是这个已经发生的事实。其余节点stage取承接/发展/转/落（发展与转可各有多个）：本轮核心变化（信息更新/关系位移/局面改变）必须落在中部节点；每个节点的note要具体到可拍摄的事（谁做什么、出现什么），足以支撑200-300字的正文展开；除第一个落地节点（呈现玩家已声明行动的可见结果）外，其余节点的执行者只能是NPC、环境或世界事件，绝不把玩家的行动、反应或决定编排成节点内容——要推进就把局面推到玩家面前，等玩家自己动。engagement拍板本轮反应形状：私密对谈、一对一深交、单人求助时mode取focus并写focus_person（只有他做主要回应，其他人至多背景小动作）；宣布大事、公开冲突、多人利益同时被触及（修罗场）时mode取ensemble（被卷入者必须互相接话互相冲突，形成NPC对NPC的连锁，不许每人各自对玩家说一句）。玩家做偷窃/暗中行动等风险动作时，你按关系、情境与戏剧性裁定成、败或被抓个半截（loot_hint写结果）。npc_interaction可指定一对NPC本轮发生不经过玩家的互动及其性质（依npc_relations当前值：warmth低互相带刺、tension高正面冲突）。只输出JSON：{"beat_type":"relationship|daily|exploration|conflict|reveal|aftermath|world_event","beat_goal":"一句话","beat_outline":[{"stage":"承接|发展|转|落","note":"该节点一句话"}],"npc_state_updates":[{"id":"","mood":"","stance_to_player":"","pattern":""}],"story_routing":"follow|echo|invite|trigger|diverge","on_stage":["角色id"],"npc_motives":[{"id":"","want":"","behavior":""}],"world_change":null,"process_moves":[{"id":"","advance":false,"note":""}],"introduce_encounter":null,"closing_direction":"本轮结尾必须落在的具体钩子（新异动/未完动作/他人反应/环境变化，能自然勾出玩家下一步，不许平收）","engagement":{"mode":"focus|ensemble","focus_person":"角色id或null"},"os_assignments":[{"id":"","tone":""}],"loot_hint":null,"npc_interaction":null}`;
+      const rawBeat = await callStoryModel(directorSystem, JSON.stringify(directorPacket), 0.5, 1600);
       const parsedBeat = typeof rawBeat === "string" ? parseModelJson(rawBeat) : rawBeat;
       if (parsedBeat && typeof parsedBeat === "object") directorBeat = parsedBeat as Record<string, unknown>;
     } catch {
@@ -1430,6 +1486,7 @@ async function runXianxiaTurn(body: TurnBody, onEvent?: (event: StreamedEvent) =
       npcBelongings,
       npcRelations,
       npcStates,
+      worldEntities,
       sceneMemory,
     });
     // V4.4 流式：首发尝试用流式调用并逐个下发已闭合 event；
@@ -1447,9 +1504,9 @@ async function runXianxiaTurn(body: TurnBody, onEvent?: (event: StreamedEvent) =
           : undefined;
         const streamedText = await callStoryModelStream(
           turnPrompt,
-          "生成本轮仙侠互动场景，只输出JSON。本轮是衔接自然的连续两场戏：把beat_outline的每一个节点都完整演出来（谁做什么、出现什么、对白与反应），第一场戏的钩子当场兑现并展开成第二场戏，两场都要完整；正文必须写满1400至2200个中文字符，第二场戏只开头不展开即不合格。",
+          "生成本轮仙侠互动场景，只输出JSON。把beat_outline的每一个节点都完整演出来（谁做什么、出现什么、对白与反应），第一个节点先让玩家的行动可见落地；正文写满900至1400个中文字符，不许一笔带过或合并节点。",
           0.62,
-          9000,
+          5600,
           { requestTimeoutMs: 100000, ...(writerModel ? { primaryModel: writerModel } : {}) },
           (fullText) => {
             const closed = extractClosedEvents(fullText);
@@ -1473,9 +1530,9 @@ async function runXianxiaTurn(body: TurnBody, onEvent?: (event: StreamedEvent) =
     if (raw === null) {
       raw = await callStoryModel(
         turnPrompt,
-        "生成本轮仙侠互动场景，只输出JSON。本轮是衔接自然的连续两场戏：把beat_outline的每一个节点都完整演出来（谁做什么、出现什么、对白与反应），第一场戏的钩子当场兑现并展开成第二场戏，两场都要完整；正文必须写满1400至2200个中文字符，第二场戏只开头不展开即不合格。",
+        "生成本轮仙侠互动场景，只输出JSON。把beat_outline的每一个节点都完整演出来（谁做什么、出现什么、对白与反应），第一个节点先让玩家的行动可见落地；正文写满900至1400个中文字符，不许一笔带过或合并节点。",
         0.62,
-        9000,
+        5600,
         {
           stage: "prompt3",
           requestTimeoutMs: 100000,
@@ -1560,6 +1617,7 @@ async function runXianxiaTurn(body: TurnBody, onEvent?: (event: StreamedEvent) =
       npcRelations: nextNpcRelations,
       npcStates: nextNpcStates,
       scenePresent: nextScenePresent,
+      worldEntities: mergeWorldEntities(worldEntities, result.sceneDelta.newEntities, result.sceneDelta.entityUpdates),
     };
     const nextState = chapterOutcome
       ? {
